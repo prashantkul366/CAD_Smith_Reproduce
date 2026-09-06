@@ -6,12 +6,24 @@ Implements the multi-agent pipeline:
 """
 
 import os
+import time
 from typing import Optional
 
 import anthropic
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Backend selection
+# ---------------------------------------------------------------------------
+
+LLM_BACKEND = os.getenv("LLM_BACKEND", "anthropic").strip().lower()  # "anthropic" | "local"
+LOCAL_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1").rstrip("/")
+LOCAL_API_KEY = os.getenv("VLLM_API_KEY", "sgpbench-CHANGEME")
+LOCAL_MODEL_ID = os.getenv("VLLM_MODEL_ID", "Qwen/Qwen3-VL-8B-Instruct")
+LOCAL_TIMEOUT = float(os.getenv("VLLM_TIMEOUT", "600"))
 
 # ---------------------------------------------------------------------------
 # Token usage tracking
@@ -32,12 +44,90 @@ def reset_token_usage():
     _token_usage["calls"] = 0
 
 
+# def _get_client() -> anthropic.Anthropic:
+#     return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+
+# def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
+#     """Call Claude and return the text response. Tracks token usage."""
+#     client = _get_client()
+#     response = client.messages.create(
+#         model=model,
+#         max_tokens=max_tokens,
+#         system=system,
+#         messages=[{"role": "user", "content": user}],
+#     )
+#     # Accumulate token usage
+#     if hasattr(response, "usage") and response.usage:
+#         _token_usage["input_tokens"] += response.usage.input_tokens
+#         _token_usage["output_tokens"] += response.usage.output_tokens
+#     _token_usage["calls"] += 1
+#     return response.content[0].text
+
 def _get_client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
+def _call_local_llm(system: str, content, max_tokens: int = 4096,
+                     temperature: float = 0.0, retries: int = 3) -> tuple[str, dict]:
+    """Call the local OpenAI-compatible shim (e.g. Qwen3-VL-8B-Instruct on Colab)."""
+    payload = {
+        "model": LOCAL_MODEL_ID,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    headers = {"Authorization": f"Bearer {LOCAL_API_KEY}"}
+
+    last_err = None
+    for attempt in range(retries):
+        try:
+            resp = requests.post(
+                f"{LOCAL_BASE_URL}/chat/completions",
+                json=payload, headers=headers, timeout=LOCAL_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            text = data["choices"][0]["message"]["content"]
+            usage = {
+                "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
+                "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
+            }
+            return text, usage
+        except (requests.exceptions.RequestException, KeyError, ValueError) as e:
+            last_err = e
+            if attempt < retries - 1:
+                time.sleep(5 * (attempt + 1))
+    raise RuntimeError(f"Local LLM call to {LOCAL_BASE_URL} failed after {retries} attempts: {last_err}")
+
+
+def _anthropic_blocks_to_openai(blocks: list) -> list:
+    """Convert Anthropic-style content blocks to OpenAI-style content blocks."""
+    out = []
+    for b in blocks:
+        if b["type"] == "text":
+            out.append({"type": "text", "text": b["text"]})
+        elif b["type"] == "image":
+            src = b["source"]
+            out.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{src['media_type']};base64,{src['data']}"},
+            })
+    return out
+
+
 def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
-    """Call Claude and return the text response. Tracks token usage."""
+    """Call the configured LLM backend and return the text response. Tracks token usage."""
+    if LLM_BACKEND == "local":
+        text, usage = _call_local_llm(system, user, max_tokens=max_tokens)
+        _token_usage["input_tokens"] += usage.get("input_tokens", 0)
+        _token_usage["output_tokens"] += usage.get("output_tokens", 0)
+        _token_usage["calls"] += 1
+        return text.strip()
+
     client = _get_client()
     response = client.messages.create(
         model=model,
@@ -45,13 +135,11 @@ def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-2025092
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    # Accumulate token usage
     if hasattr(response, "usage") and response.usage:
         _token_usage["input_tokens"] += response.usage.input_tokens
         _token_usage["output_tokens"] += response.usage.output_tokens
     _token_usage["calls"] += 1
     return response.content[0].text
-
 
 # ---------------------------------------------------------------------------
 # PLANNER AGENT
@@ -157,8 +245,16 @@ Design plan:
         code = code[3:].strip()
     if code.endswith("```"):
         code = code[:-3].strip()
-    return code
 
+    # if code.endswith("```"):
+    #     code = code[:-3].strip()
+    # # Qwen3-VL-8B frequently omits the cadquery import despite the system
+    # # prompt requiring it — patch it in defensively rather than burning an
+    # # Error Refiner round-trip on every single prompt.
+    # if "import cadquery" not in code:
+    #     code = "import cadquery as cq\n" + code
+
+    # return code
 
 # ---------------------------------------------------------------------------
 # ERROR REFINER AGENT
@@ -365,22 +461,45 @@ def evaluate_geometry(
 
     message_content.append({"type": "text", "text": text_content})
 
-    # Call Opus with vision-capable message format
-    client = _get_client()
-    response = client.messages.create(
-        model="claude-opus-4-20250514",
-        max_tokens=4096,
-        system=VALIDATOR_SYSTEM,
-        messages=[{"role": "user", "content": message_content}],
-    )
+    # # Call Opus with vision-capable message format
+    # client = _get_client()
+    # response = client.messages.create(
+    #     model="claude-opus-4-20250514",
+    #     max_tokens=4096,
+    #     system=VALIDATOR_SYSTEM,
+    #     messages=[{"role": "user", "content": message_content}],
+    # )
 
-    # Track token usage
-    if hasattr(response, "usage") and response.usage:
-        _token_usage["input_tokens"] += response.usage.input_tokens
-        _token_usage["output_tokens"] += response.usage.output_tokens
-    _token_usage["calls"] += 1
+    # # Track token usage
+    # if hasattr(response, "usage") and response.usage:
+    #     _token_usage["input_tokens"] += response.usage.input_tokens
+    #     _token_usage["output_tokens"] += response.usage.output_tokens
+    # _token_usage["calls"] += 1
 
-    text = response.content[0].text.strip()
+    # text = response.content[0].text.strip()
+
+    # Call the Judge model (Opus, or the local VLM when LLM_BACKEND=local)
+    if LLM_BACKEND == "local":
+        openai_content = _anthropic_blocks_to_openai(message_content)
+        text, usage = _call_local_llm(VALIDATOR_SYSTEM, openai_content, max_tokens=4096)
+        _token_usage["input_tokens"] += usage.get("input_tokens", 0)
+        _token_usage["output_tokens"] += usage.get("output_tokens", 0)
+        _token_usage["calls"] += 1
+        text = text.strip()
+    else:
+        client = _get_client()
+        response = client.messages.create(
+            model="claude-opus-4-20250514",
+            max_tokens=4096,
+            system=VALIDATOR_SYSTEM,
+            messages=[{"role": "user", "content": message_content}],
+        )
+        if hasattr(response, "usage") and response.usage:
+            _token_usage["input_tokens"] += response.usage.input_tokens
+            _token_usage["output_tokens"] += response.usage.output_tokens
+        _token_usage["calls"] += 1
+        text = response.content[0].text.strip()
+
     if text.startswith("```json"):
         text = text[len("```json"):].strip()
     elif text.startswith("```"):
