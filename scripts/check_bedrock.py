@@ -62,8 +62,16 @@ def main() -> int:
         print(f"       {ident['Arn']}")
     except Exception as e:
         print(f"{BAD} {type(e).__name__}: {e}")
-        print("        Credentials missing or expired. Re-copy them from")
-        print("        https://ymsli.awsapps.com/start -> your role -> Access keys")
+        if "CERTIFICATE_VERIFY_FAILED" in str(e):
+            print("        TLS trust problem, not a credentials problem. Your network")
+            print("        likely inspects TLS with a corporate root CA that lives in")
+            print("        the Windows store but not in certifi. Build a bundle:")
+            print("          .\\scripts\\export_windows_ca_bundle.ps1")
+            print("        then set SSL_CERT_FILE / AWS_CA_BUNDLE / REQUESTS_CA_BUNDLE")
+            print("        to the file it writes, and re-run.")
+        else:
+            print("        Credentials missing or expired. Re-copy them from")
+            print("        your AWS access portal -> your role -> Access keys")
         return 1
 
     # --- 2. model access ----------------------------------------------------

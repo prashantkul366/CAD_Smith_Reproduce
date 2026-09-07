@@ -54,4 +54,12 @@ def undo_pip_truststore_injection() -> bool:
     return False
 
 
-UNDONE = undo_pip_truststore_injection()
+# Escape hatch: set AUTOFAB_KEEP_TRUSTSTORE=1 to leave the injection alone
+# (for example on a machine where the Windows store is the only source of a
+# corporate root CA and httpx happens to work anyway).
+import os as _os
+
+if _os.getenv("AUTOFAB_KEEP_TRUSTSTORE", "").strip() in ("1", "true", "yes"):
+    UNDONE = False
+else:
+    UNDONE = undo_pip_truststore_injection()
