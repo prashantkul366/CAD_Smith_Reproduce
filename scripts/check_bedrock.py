@@ -39,6 +39,14 @@ def main() -> int:
     print(f"  coder model : {agents.CODER_MODEL}")
     print(f"  judge model : {agents.JUDGE_MODEL}")
     print(f"  max tokens  : {agents.MAX_TOKENS}")
+    import ssl
+    from autofab import _ssl_compat
+    if _ssl_compat.UNDONE:
+        print(f"  ssl         : repaired a global truststore injection "
+              f"(now {ssl.SSLContext.__module__}.{ssl.SSLContext.__name__})")
+    elif "truststore" in getattr(ssl.SSLContext, "__module__", ""):
+        print(f"{WARN} ssl.SSLContext is {ssl.SSLContext.__module__} and could not")
+        print("         be un-injected - HTTPS calls may fail with RecursionError.")
 
     if agents.LLM_BACKEND != "bedrock":
         print(f"\n{BAD} LLM_BACKEND is '{agents.LLM_BACKEND}', not 'bedrock'.")

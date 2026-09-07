@@ -9,6 +9,10 @@ import os
 import time
 from typing import Optional
 
+# MUST precede anthropic/httpx: repairs a global truststore injection that
+# otherwise makes every HTTPS call recurse to death. See _ssl_compat.
+from . import _ssl_compat  # noqa: F401
+
 import anthropic
 import requests
 from dotenv import load_dotenv
