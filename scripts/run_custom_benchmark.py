@@ -501,6 +501,24 @@ def main():
         with open(results_file, "a") as f:
             f.write(json.dumps(record) + "\n")
 
+        # Credentials that expire mid-run would otherwise turn one failure into
+        # a failure for every remaining entry, each recorded as attempted - so
+        # resume would skip them all. Stop instead, and say what to do.
+        err = str(record.get("error") or "")
+        if any(m in err for m in ("401", "ExpiredToken", "InvalidClientTokenId",
+                                  "UnrecognizedClientException",
+                                  "AuthenticationError")):
+            print("\n" + "=" * 70)
+            print("STOPPING: the provider rejected our credentials.")
+            print("=" * 70)
+            print(f"  {err[:200]}")
+            print("\n  Short-lived credentials usually expire mid-run. To resume:")
+            print("    1. refresh them (re-copy from your AWS access portal)")
+            print(f"    2. python scripts/drop_failed_entries.py "
+                  f"{experiment_dir} --apply")
+            print(f"    3. re-run the same command; completed entries are kept")
+            break
+
         total_done += 1
         if record.get("execution_success"):
             exec_ok += 1
