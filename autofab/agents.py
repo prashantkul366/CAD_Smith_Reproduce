@@ -29,7 +29,13 @@ LOCAL_TIMEOUT = float(os.getenv("VLLM_TIMEOUT", "600"))
 # Uses the ambient AWS credential chain (SSO profile, instance role, env vars);
 # no Anthropic API key required.
 AWS_REGION = os.getenv("AWS_REGION") or os.getenv("BEDROCK_REGION") or "us-east-1"
-AWS_PROFILE = os.getenv("AWS_PROFILE") or None
+def _clean(v):
+    """Ignore an unsubstituted placeholder like `<your-profile>` copied from docs."""
+    v = (v or "").strip()
+    return None if not v or (v.startswith("<") and v.endswith(">")) else v
+
+
+AWS_PROFILE = _clean(os.getenv("AWS_PROFILE"))
 
 # The pipeline pairs a coder with a STRONGER judge on purpose, so the Judge is
 # not grading its own homework. (The local backend serves every role from one

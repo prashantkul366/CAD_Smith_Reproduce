@@ -30,6 +30,12 @@ def main() -> int:
     print(f"  backend     : {agents.LLM_BACKEND}")
     print(f"  region      : {agents.AWS_REGION}")
     print(f"  profile     : {agents.AWS_PROFILE or '(none - using env credentials)'}")
+    raw_profile = (os.getenv("AWS_PROFILE") or "").strip()
+    if raw_profile and agents.AWS_PROFILE is None:
+        print(f"{WARN} AWS_PROFILE is set to the placeholder '{raw_profile}' and is")
+        print("         being ignored. Clear it with:")
+        print("           PowerShell:  Remove-Item Env:AWS_PROFILE")
+        print("           bash:        unset AWS_PROFILE")
     print(f"  coder model : {agents.CODER_MODEL}")
     print(f"  judge model : {agents.JUDGE_MODEL}")
     print(f"  max tokens  : {agents.MAX_TOKENS}")
