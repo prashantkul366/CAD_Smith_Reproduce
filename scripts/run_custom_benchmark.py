@@ -77,7 +77,8 @@ def load_entries(tiers: list[str], limit_per_tier: int = 0) -> list[dict]:
 
 def generate_reference_stl(reference_code: str, entry_id: str, output_dir: Path) -> str:
     """Execute reference code and return path to the generated STL."""
-    ref_stl_dir = output_dir / "reference_stls"
+    # ref_stl_dir = output_dir / "reference_stls"
+    ref_stl_dir = DATA_DIR / "reference_stls"
     ref_stl_dir.mkdir(parents=True, exist_ok=True)
 
     ref_stl_path = ref_stl_dir / f"{entry_id}.stl"
@@ -97,6 +98,166 @@ def generate_reference_stl(reference_code: str, entry_id: str, output_dir: Path)
     return str(ref_stl_path)
 
 
+# def run_single_entry(
+#     entry: dict,
+#     output_dir: Path,
+#     mode: str,
+#     max_iterations: int,
+#     max_error_retries: int,
+#     verbose: bool,
+#     use_vision: bool = True,
+# ) -> dict:
+#     """Run the full pipeline on a single custom benchmark entry."""
+#     entry_id = entry["id"]
+#     tier = entry["tier"]
+#     prompt = entry["prompt"]
+#     reference_code = entry["reference_code"]
+
+#     # agents.reset_token_usage()
+#     # start_time = time.time()
+#     agents.reset_token_usage()
+#     agents.reset_repair_counts()
+#     start_time = time.time()
+
+#     # Generate reference STL from reference code
+#     try:
+#         ref_stl_path = generate_reference_stl(reference_code, entry_id, output_dir)
+#     except Exception as e:
+#         return {
+#             "id": entry_id, "tier": tier, "prompt": prompt,
+#             "success": False, "execution_success": False,
+#             "error": f"Reference STL generation failed: {e}",
+#         }
+
+#     # Set up per-entry output directory
+#     entry_output_dir = output_dir / "generated_stls"
+#     entry_output_dir.mkdir(parents=True, exist_ok=True)
+
+#     # Configure pipeline
+#     max_refine = 0 if mode == "single-shot" else max_iterations
+#     pipeline = Pipeline(
+#         output_dir=str(entry_output_dir),
+#         max_error_retries=max_error_retries,
+#         max_refinement_iterations=max_refine,
+#         verbose=verbose,
+#         use_vision=use_vision,
+#     )
+
+#     # Run full pipeline (with Planner)
+#     try:
+#         result = pipeline.run(prompt, name=entry_id)
+#     # except Exception as e:
+#     #     tokens = agents.get_token_usage()
+#     #     return {
+#     #         "id": entry_id, "tier": tier, "prompt": prompt,
+#     #         "success": False, "execution_success": False,
+#     #         "error": str(e), "tokens": tokens,
+#     #     }
+#     except Exception as e:
+#         tokens = agents.get_token_usage()
+#         return {
+#             "id": entry_id, "tier": tier, "prompt": prompt,
+#             "success": False, "execution_success": False,
+#             "error": str(e), "tokens": tokens,
+#             "repairs": agents.get_repair_counts(),
+#         }
+
+#     tokens = agents.get_token_usage()
+#     repairs = agents.get_repair_counts()
+
+#     # Build result record
+#     record = {
+#         "id": entry_id,
+#         "tier": tier,
+#         "prompt": prompt,
+#         "success": result.converged,
+#         "execution_success": result.final_geometry is not None,
+#         "num_iterations": len(result.iterations),
+#         "num_llm_calls": result.total_llm_calls,
+#         "total_time_ms": result.total_time_ms,
+#         "tokens": tokens,
+#         "repairs": repairs,
+#         "geometry": result.final_geometry,
+#         "converged": result.converged,
+#         "error": None,
+#     }
+
+#     # Compute CD/F1/IoU against reference STL
+#     gen_stl = result.final_stl_path
+#     if gen_stl and Path(gen_stl).exists():
+#         try:
+#             metrics = compare_stl(gen_stl, ref_stl_path, normalize=False)
+#             record["metrics"] = metrics.to_dict()
+#         except Exception as e:
+#             record["metrics"] = None
+#             record["error"] = f"Metrics computation failed: {e}"
+#     else:
+#         record["metrics"] = None
+#         if not record.get("error"):
+#             record["error"] = "No STL generated"
+
+#     # Per-iteration data (for convergence curves)
+#     per_iter = []
+#     for it in result.iterations:
+#         iter_entry = {
+#             "iteration": it.iteration,
+#             "type": it.iteration_type,
+#             "passed": it.passed,
+#             "execution_success": it.execution is not None and it.execution.get("success", False),
+#             "code": it.code,
+#             "error_retries": it.error_retries,
+#             "feedback_sent": it.feedback_sent,
+#             "refiner_input": it.refiner_input,
+#             "refiner_output": it.refiner_output,
+#         }
+#         # Compute per-iteration metrics if STL was generated
+#         iter_stl = entry_output_dir / f"{entry_id}_iter{it.iteration}.stl"
+#         if iter_stl.exists():
+#             try:
+#                 iter_metrics = compare_stl(str(iter_stl), ref_stl_path, normalize=False)
+#                 iter_entry["metrics"] = iter_metrics.to_dict()
+#             except Exception:
+#                 iter_entry["metrics"] = None
+#                 if it.validation:
+#                 iter_entry["validation"] = it.validation
+#             per_iter.append(iter_entry)
+
+#         record["per_iteration"] = per_iter
+
+#         # Did the Error Refiner ever hand back the code it was given unchanged?
+#         noop_total = 0
+#         for pi in per_iter:
+#             prev = (pi.get("code") or "").strip()
+#             retries = pi.get("error_retries") or []
+#             n = sum(1 for r in retries if (r.get("fix_code") or "").strip() == prev)
+#             pi["refiner_noop_count"] = n
+#             noop_total += n
+#         record["refiner_noop_total"] = noop_total
+
+#         return record
+#     #     if it.validation:
+#     #         iter_entry["validation"] = it.validation
+#     #         per_iter.append(iter_entry)
+#     #     record["per_iteration"] = per_iter
+
+#     #     # Did the Error Refiner ever hand back the code it was given unchanged?
+#     #     noop_total = 0
+#     #     for it in per_iter:
+#     #         prev = (it.get("code") or "").strip()
+#     #         retries = it.get("error_retries") or []
+#     #         n = sum(1 for r in retries if (r.get("fix_code") or "").strip() == prev)
+#     #         it["refiner_noop_count"] = n
+#     #         noop_total += n
+#     #     record["refiner_noop_total"] = noop_total
+
+#     #     return record
+    
+#     # #     per_iter.append(iter_entry)
+#     # # record["per_iteration"] = per_iter
+
+#     # # return record
+
+
 def run_single_entry(
     entry: dict,
     output_dir: Path,
@@ -113,6 +274,7 @@ def run_single_entry(
     reference_code = entry["reference_code"]
 
     agents.reset_token_usage()
+    agents.reset_repair_counts()
     start_time = time.time()
 
     # Generate reference STL from reference code
@@ -148,9 +310,11 @@ def run_single_entry(
             "id": entry_id, "tier": tier, "prompt": prompt,
             "success": False, "execution_success": False,
             "error": str(e), "tokens": tokens,
+            "repairs": agents.get_repair_counts(),
         }
 
     tokens = agents.get_token_usage()
+    repairs = agents.get_repair_counts()
 
     # Build result record
     record = {
@@ -163,6 +327,7 @@ def run_single_entry(
         "num_llm_calls": result.total_llm_calls,
         "total_time_ms": result.total_time_ms,
         "tokens": tokens,
+        "repairs": repairs,
         "geometry": result.final_geometry,
         "converged": result.converged,
         "error": None,
@@ -207,11 +372,20 @@ def run_single_entry(
         if it.validation:
             iter_entry["validation"] = it.validation
         per_iter.append(iter_entry)
+
     record["per_iteration"] = per_iter
 
+    # Did the Error Refiner ever hand back the code it was given unchanged?
+    noop_total = 0
+    for pi in per_iter:
+        prev = (pi.get("code") or "").strip()
+        retries = pi.get("error_retries") or []
+        n = sum(1 for r in retries if (r.get("fix_code") or "").strip() == prev)
+        pi["refiner_noop_count"] = n
+        noop_total += n
+    record["refiner_noop_total"] = noop_total
+
     return record
-
-
 def main():
     parser = argparse.ArgumentParser(description="Run AutoFab custom benchmark")
     parser.add_argument("--experiment-name", type=str, required=True,
@@ -250,7 +424,9 @@ def main():
         "max_iterations": args.max_iterations if args.mode == "refinement" else 0,
         "max_error_retries": args.max_error_retries,
         "limit_per_tier": args.limit_per_tier,
-        "model": "claude-sonnet",
+        # "model": "claude-sonnet",
+        "model": agents.LOCAL_MODEL_ID if agents.LLM_BACKEND == "local" else "claude-sonnet",
+        "backend": agents.LLM_BACKEND,
         "pipeline": "full" if args.mode == "refinement" else "single-shot",
         "rag_config": "kb1+kb2",
         "vision": not args.no_vision,
@@ -381,19 +557,46 @@ def main():
           f"Converged: {converged}/{total_done} ({converged/total_done*100:.1f}%)")
     print(f"Time: {elapsed:.0f}s ({elapsed/60:.1f}min)")
 
-    tokens_total = sum(r.get("tokens", {}).get("input_tokens", 0) for r in [])  # from file
-    # Re-read for token totals
-    total_in, total_out = 0, 0
+    # tokens_total = sum(r.get("tokens", {}).get("input_tokens", 0) for r in [])  # from file
+    # # Re-read for token totals
+    # total_in, total_out = 0, 0
+    # with open(results_file) as f:
+    #     for line in f:
+    #         r = json.loads(line)
+    #         t = r.get("tokens", {})
+    #         total_in += t.get("input_tokens", 0)
+    #         total_out += t.get("output_tokens", 0)
+    # cost_in = total_in / 1_000_000 * 3
+    # cost_out = total_out / 1_000_000 * 15
+    # print(f"Tokens: {total_in:,} in / {total_out:,} out")
+    # print(f"Est. cost: ${cost_in + cost_out:.2f}")
+
+    # Re-read for token totals and format-repair rates
+    total_in, total_out, noop_total = 0, 0, 0
+    repairs = {"calls": 0, "prose_stripped": 0, "result_patched": 0, "import_patched": 0}
     with open(results_file) as f:
         for line in f:
             r = json.loads(line)
             t = r.get("tokens", {})
             total_in += t.get("input_tokens", 0)
             total_out += t.get("output_tokens", 0)
-    cost_in = total_in / 1_000_000 * 3
-    cost_out = total_out / 1_000_000 * 15
+            noop_total += r.get("refiner_noop_total", 0)
+            for k, v in (r.get("repairs") or {}).items():
+                repairs[k] = repairs.get(k, 0) + v
+
     print(f"Tokens: {total_in:,} in / {total_out:,} out")
-    print(f"Est. cost: ${cost_in + cost_out:.2f}")
+    if agents.LLM_BACKEND == "local":
+        print(f"Backend: local ({agents.LOCAL_MODEL_ID}) — no API cost")
+    else:
+        print(f"Est. cost: ${total_in/1_000_000*3 + total_out/1_000_000*15:.2f}")
+
+    c = repairs["calls"]
+    if c:
+        print(f"Coder output repairs (n={c}): "
+              f"result={repairs['result_patched']} ({repairs['result_patched']/c*100:.0f}%), "
+              f"import={repairs['import_patched']} ({repairs['import_patched']/c*100:.0f}%), "
+              f"prose={repairs['prose_stripped']} ({repairs['prose_stripped']/c*100:.0f}%)")
+    print(f"Error Refiner no-op returns: {noop_total}")
 
     if cd_vals:
         import numpy as np

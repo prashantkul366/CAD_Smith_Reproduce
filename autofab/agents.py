@@ -92,11 +92,21 @@ def _call_local_llm(system: str, content, max_tokens: int = 4096,
             resp.raise_for_status()
             data = resp.json()
             text = data["choices"][0]["message"]["content"]
+            # usage = {
+            #     "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
+            #     "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
+            # }
+            # return text, usage
+
             usage = {
                 "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
                 "output_tokens": data.get("usage", {}).get("completion_tokens", 0),
+                "finish_reason": data["choices"][0].get("finish_reason"),
             }
+            if usage["finish_reason"] == "length":
+                print(f"  WARN: local LLM hit max_tokens={max_tokens} — output truncated")
             return text, usage
+        
         except (requests.exceptions.RequestException, KeyError, ValueError) as e:
             last_err = e
             if attempt < retries - 1:
@@ -141,6 +151,100 @@ def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-2025092
     _token_usage["calls"] += 1
     return response.content[0].text
 
+
+import re
+
+# def _extract_code(text: str) -> str:
+#     if not text or not text.strip():
+#         raise ValueError("LLM returned empty response")
+#     blocks = re.findall(r"```(?:python)?\s*(.*?)```", text, re.DOTALL)
+#     code = (blocks[0] if blocks else text).strip()
+#     # drop leading prose before the first plausible code line
+#     lines = code.splitlines()
+#     for i, ln in enumerate(lines):
+#         if ln.startswith(("import ", "from ", "#")) or "=" in ln:
+#             code = "\n".join(lines[i:])
+#             break
+#     if "import cadquery" not in code:
+#         code = "import cadquery as cq\n" + code
+#     return code.strip()
+
+_repair_counts = {"calls": 0, "prose_stripped": 0, "result_patched": 0, "import_patched": 0}
+
+
+def get_repair_counts() -> dict:
+    """Return how often each output-format repair fired since last reset."""
+    return dict(_repair_counts)
+
+
+def reset_repair_counts():
+    for k in _repair_counts:
+        _repair_counts[k] = 0
+
+
+def _extract_code(text: str) -> str:
+    """Pull executable Python out of a possibly-chatty LLM response.
+
+    Qwen3-VL-8B does not reliably follow the Coder system prompt: it omits the
+    cadquery import, emits a bare trailing expression instead of assigning to
+    `result`, and sometimes wraps the plan in a ```json block before the code.
+    Each repair below is counted so the rate can be reported.
+    """
+    if not text or not text.strip():
+        raise ValueError("LLM returned empty response")
+
+    _repair_counts["calls"] += 1
+
+    # Capture the language tag so a ```json plan restatement is never mistaken
+    # for the script. Prefer a block that actually assigns `result`.
+    blocks = re.findall(r"```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\r?\n(.*?)```", text, re.DOTALL)
+    py = [body for tag, body in blocks if tag.lower() in ("", "py", "python")]
+    best = [b for b in py if re.search(r"^\s*result\s*=", b, re.M)]
+    code = (best or py or [text])[0].strip()
+
+    # Drop any prose before the first plausible line of code.
+    lines = code.splitlines()
+    for i, ln in enumerate(lines):
+        s = ln.strip()
+        if s.startswith(("import ", "from ", "#")) or re.match(r"^[A-Za-z_]\w*\s*=", s):
+            if i > 0:
+                _repair_counts["prose_stripped"] += 1
+                code = "\n".join(lines[i:])
+            break
+
+    # Bare trailing expression instead of `result = ...`.
+    if not re.search(r"^\s*result\s*=", code, re.M):
+        lines = code.splitlines()
+        for i in range(len(lines) - 1, -1, -1):
+            s = lines[i].strip()
+            if not s or s.startswith("#"):
+                continue
+            # Only patch a top-level expression, so nothing inside a function
+            # or loop body gets rewritten.
+            if lines[i] == s and re.match(r"^(cq|cadquery)\.", s):
+                lines[i] = "result = " + s
+                code = "\n".join(lines)
+                _repair_counts["result_patched"] += 1
+            break
+
+    if "import cadquery" not in code:
+        code = "import cadquery as cq\n" + code
+        _repair_counts["import_patched"] += 1
+
+    return code.strip()
+
+
+def _extract_json(text: str) -> dict:
+    import json
+    if not text or not text.strip():
+        raise ValueError("LLM returned empty response")
+    blocks = re.findall(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    blob = blocks[0] if blocks else text
+    start, end = blob.find("{"), blob.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError(f"No JSON object in response: {text[:300]}")
+    return json.loads(blob[start:end + 1])
+
 # ---------------------------------------------------------------------------
 # PLANNER AGENT
 # ---------------------------------------------------------------------------
@@ -175,20 +279,24 @@ If dimensions are not specified, estimate reasonable engineering dimensions and 
 Output ONLY valid JSON, no other text."""
 
 
+# def plan(prompt: str) -> dict:
+#     """Planner agent: natural language → structured design plan."""
+#     import json
+#     response = _call_claude(PLANNER_SYSTEM, prompt)
+#     # Strip markdown code fences if present
+#     text = response.strip()
+#     if text.startswith("```"):
+#         text = text.split("\n", 1)[1]
+#         if text.endswith("```"):
+#             text = text[:-3]
+#         elif "```" in text:
+#             text = text[:text.rfind("```")]
+#     return json.loads(text.strip())
+
 def plan(prompt: str) -> dict:
     """Planner agent: natural language → structured design plan."""
-    import json
     response = _call_claude(PLANNER_SYSTEM, prompt)
-    # Strip markdown code fences if present
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1]
-        if text.endswith("```"):
-            text = text[:-3]
-        elif "```" in text:
-            text = text[:text.rfind("```")]
-    return json.loads(text.strip())
-
+    return _extract_json(response)
 
 # ---------------------------------------------------------------------------
 # CODER AGENT
@@ -237,24 +345,29 @@ Design plan:
 {kb1_context}Generate the CadQuery Python script. Remember: assign the final shape to `result`."""
 
     response = _call_claude(CODER_SYSTEM, user_msg)
-    # Strip markdown code fences if present
-    code = response.strip()
-    if code.startswith("```python"):
-        code = code[len("```python"):].strip()
-    elif code.startswith("```"):
-        code = code[3:].strip()
-    if code.endswith("```"):
-        code = code[:-3].strip()
+    import pathlib
+    pathlib.Path("outputs").mkdir(exist_ok=True)
+    pathlib.Path("outputs/last_coder_raw.txt").write_text(response, encoding="utf-8")
+    return _extract_code(response)
 
+    # # Strip markdown code fences if present
+    # code = response.strip()
+    # if code.startswith("```python"):
+    #     code = code[len("```python"):].strip()
+    # elif code.startswith("```"):
+    #     code = code[3:].strip()
     # if code.endswith("```"):
     #     code = code[:-3].strip()
-    # # Qwen3-VL-8B frequently omits the cadquery import despite the system
-    # # prompt requiring it — patch it in defensively rather than burning an
-    # # Error Refiner round-trip on every single prompt.
-    # if "import cadquery" not in code:
-    #     code = "import cadquery as cq\n" + code
 
-    # return code
+    # # if code.endswith("```"):
+    # #     code = code[:-3].strip()
+    # # # Qwen3-VL-8B frequently omits the cadquery import despite the system
+    # # # prompt requiring it — patch it in defensively rather than burning an
+    # # # Error Refiner round-trip on every single prompt.
+    # # if "import cadquery" not in code:
+    # #     code = "import cadquery as cq\n" + code
+
+    # # return code
 
 # ---------------------------------------------------------------------------
 # ERROR REFINER AGENT
@@ -309,14 +422,16 @@ ERROR:
 Fix the code. Output ONLY the corrected Python code."""
 
     response = _call_claude(ERROR_REFINER_SYSTEM, user_msg)
-    code = response.strip()
-    if code.startswith("```python"):
-        code = code[len("```python"):].strip()
-    elif code.startswith("```"):
-        code = code[3:].strip()
-    if code.endswith("```"):
-        code = code[:-3].strip()
-    return code
+        # response = _call_claude(ERROR_REFINER_SYSTEM, user_msg)
+    return _extract_code(response)
+    # code = response.strip()
+    # if code.startswith("```python"):
+    #     code = code[len("```python"):].strip()
+    # elif code.startswith("```"):
+    #     code = code[3:].strip()
+    # if code.endswith("```"):
+    #     code = code[:-3].strip()
+    # return code
 
 
 # ---------------------------------------------------------------------------
@@ -479,35 +594,78 @@ def evaluate_geometry(
     # text = response.content[0].text.strip()
 
     # Call the Judge model (Opus, or the local VLM when LLM_BACKEND=local)
+    # if LLM_BACKEND == "local":
+    #     openai_content = _anthropic_blocks_to_openai(message_content)
+    #     text, usage = _call_local_llm(VALIDATOR_SYSTEM, openai_content, max_tokens=4096)
+    #     _token_usage["input_tokens"] += usage.get("input_tokens", 0)
+    #     _token_usage["output_tokens"] += usage.get("output_tokens", 0)
+    #     _token_usage["calls"] += 1
+    #     text = text.strip()
+    # else:
+    #     client = _get_client()
+    #     response = client.messages.create(
+    #         model="claude-opus-4-20250514",
+    #         max_tokens=4096,
+    #         system=VALIDATOR_SYSTEM,
+    #         messages=[{"role": "user", "content": message_content}],
+    #     )
+    #     if hasattr(response, "usage") and response.usage:
+    #         _token_usage["input_tokens"] += response.usage.input_tokens
+    #         _token_usage["output_tokens"] += response.usage.output_tokens
+    #     _token_usage["calls"] += 1
+    #     text = response.content[0].text.strip()
+
+    # if text.startswith("```json"):
+    #     text = text[len("```json"):].strip()
+    # elif text.startswith("```"):
+    #     text = text[3:].strip()
+    # if text.endswith("```"):
+    #     text = text[:-3].strip()
+
+    # return json.loads(text)
+
     if LLM_BACKEND == "local":
         openai_content = _anthropic_blocks_to_openai(message_content)
         text, usage = _call_local_llm(VALIDATOR_SYSTEM, openai_content, max_tokens=4096)
         _token_usage["input_tokens"] += usage.get("input_tokens", 0)
         _token_usage["output_tokens"] += usage.get("output_tokens", 0)
         _token_usage["calls"] += 1
-        text = text.strip()
-    else:
-        client = _get_client()
-        response = client.messages.create(
-            model="claude-opus-4-20250514",
-            max_tokens=4096,
-            system=VALIDATOR_SYSTEM,
-            messages=[{"role": "user", "content": message_content}],
-        )
-        if hasattr(response, "usage") and response.usage:
-            _token_usage["input_tokens"] += response.usage.input_tokens
-            _token_usage["output_tokens"] += response.usage.output_tokens
+        try:
+            return _extract_json(text)
+        except Exception:
+            pass
+        # One strict retry before giving up.
+        strict = list(openai_content) + [{
+            "type": "text",
+            "text": ('Your previous reply was not valid JSON. Reply with ONLY this object, '
+                     'nothing else: {"passed": true, "feedback": "..."}'),
+        }]
+        text2, usage2 = _call_local_llm(VALIDATOR_SYSTEM, strict, max_tokens=1024)
+        _token_usage["input_tokens"] += usage2.get("input_tokens", 0)
+        _token_usage["output_tokens"] += usage2.get("output_tokens", 0)
         _token_usage["calls"] += 1
-        text = response.content[0].text.strip()
+        try:
+            return _extract_json(text2)
+        except Exception:
+            print("  WARN: judge returned unparseable JSON twice — accepting geometry")
+            return {
+                "passed": True,
+                "feedback": "Judge unavailable (unparseable JSON).",
+                "judge_unavailable": True,
+            }
 
-    if text.startswith("```json"):
-        text = text[len("```json"):].strip()
-    elif text.startswith("```"):
-        text = text[3:].strip()
-    if text.endswith("```"):
-        text = text[:-3].strip()
-
-    return json.loads(text)
+    client = _get_client()
+    response = client.messages.create(
+        model="claude-opus-4-20250514",
+        max_tokens=4096,
+        system=VALIDATOR_SYSTEM,
+        messages=[{"role": "user", "content": message_content}],
+    )
+    if hasattr(response, "usage") and response.usage:
+        _token_usage["input_tokens"] += response.usage.input_tokens
+        _token_usage["output_tokens"] += response.usage.output_tokens
+    _token_usage["calls"] += 1
+    return _extract_json(response.content[0].text)
 
 
 # ---------------------------------------------------------------------------
@@ -617,11 +775,12 @@ GEOMETRIC VALIDATION FEEDBACK:
 Fix the geometry issues identified above. Make targeted changes based on the exact measurements provided. Output ONLY the corrected Python code."""
 
     response = _call_claude(REFINER_SYSTEM, user_msg)
-    code = response.strip()
-    if code.startswith("```python"):
-        code = code[len("```python"):].strip()
-    elif code.startswith("```"):
-        code = code[3:].strip()
-    if code.endswith("```"):
-        code = code[:-3].strip()
-    return code
+    return _extract_code(response)
+    # code = response.strip()
+    # if code.startswith("```python"):
+    #     code = code[len("```python"):].strip()
+    # elif code.startswith("```"):
+    #     code = code[3:].strip()
+    # if code.endswith("```"):
+    #     code = code[:-3].strip()
+    # return code

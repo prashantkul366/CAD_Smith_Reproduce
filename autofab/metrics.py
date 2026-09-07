@@ -178,37 +178,69 @@ def f1_score(
     return float(f1), precision, recall
 
 
+# def volumetric_iou(
+#     mesh_gen: trimesh.Trimesh,
+#     mesh_ref: trimesh.Trimesh,
+#     resolution: float = 0.02,
+# ) -> float:
+#     """Volumetric IoU (Text-to-CadQuery Eq. 4).
+
+#     Voxelize both meshes at the given resolution within [0,1]³,
+#     then compute intersection / union of occupied voxels.
+
+#     Both meshes must already be normalized to [0,1]³.
+#     """
+#     # Pad slightly to avoid boundary issues
+#     pad = resolution
+#     pitch = resolution
+
+#     voxels_gen = mesh_gen.voxelized(pitch=pitch)
+#     voxels_ref = mesh_ref.voxelized(pitch=pitch)
+
+#     # Get filled voxel indices as sets
+#     indices_gen = set(map(tuple, voxels_gen.sparse_indices))
+#     indices_ref = set(map(tuple, voxels_ref.sparse_indices))
+
+#     intersection = len(indices_gen & indices_ref)
+#     union = len(indices_gen | indices_ref)
+
+#     if union == 0:
+#         return 0.0
+
+#     return float(intersection / union)
 def volumetric_iou(
-    mesh_gen: trimesh.Trimesh,
-    mesh_ref: trimesh.Trimesh,
+    mesh_gen,
+    mesh_ref,
     resolution: float = 0.02,
 ) -> float:
-    """Volumetric IoU (Text-to-CadQuery Eq. 4).
+    """Volumetric IoU on a shared voxel grid.
 
-    Voxelize both meshes at the given resolution within [0,1]³,
-    then compute intersection / union of occupied voxels.
-
-    Both meshes must already be normalized to [0,1]³.
+    trimesh anchors each VoxelGrid to its own mesh bounds, so raw
+    sparse_indices from two separately-voxelized meshes are not comparable —
+    a sub-voxel difference in grid origin shifts every index. Quantize both
+    against a common origin in world space instead, and fill the surface
+    shells so this measures volume rather than surface occupancy.
     """
-    # Pad slightly to avoid boundary issues
-    pad = resolution
+    import numpy as np
     pitch = resolution
 
-    voxels_gen = mesh_gen.voxelized(pitch=pitch)
-    voxels_ref = mesh_ref.voxelized(pitch=pitch)
+    vg = mesh_gen.voxelized(pitch=pitch)
+    vr = mesh_ref.voxelized(pitch=pitch)
+    try:
+        vg, vr = vg.fill(), vr.fill()
+    except Exception:
+        pass  # fall back to surface voxels if no fill backend
 
-    # Get filled voxel indices as sets
-    indices_gen = set(map(tuple, voxels_gen.sparse_indices))
-    indices_ref = set(map(tuple, voxels_ref.sparse_indices))
-
-    intersection = len(indices_gen & indices_ref)
-    union = len(indices_gen | indices_ref)
-
-    if union == 0:
+    pg, pr = vg.points, vr.points  # world coordinates, not local indices
+    if len(pg) == 0 or len(pr) == 0:
         return 0.0
 
-    return float(intersection / union)
+    origin = np.minimum(pg.min(axis=0), pr.min(axis=0))
+    ig = set(map(tuple, np.floor((pg - origin) / pitch).astype(int)))
+    ir = set(map(tuple, np.floor((pr - origin) / pitch).astype(int)))
 
+    union = len(ig | ir)
+    return len(ig & ir) / union if union else 0.0
 
 def compare_stl(
     generated_stl: str,
@@ -262,7 +294,8 @@ def compare_stl(
     # to prevent OOM on large parts (e.g., 200mm plate at 1mm = 8M voxels).
     # Parts <= 100mm use the original resolution; larger parts scale up.
     max_extent = max(mesh_gen.extents.max(), mesh_ref.extents.max())
-    safe_iou_resolution = max(iou_resolution, max_extent / 100.0)
+    # safe_iou_resolution = max(iou_resolution, max_extent / 100.0)
+    safe_iou_resolution = max(iou_resolution, max_extent / 200.0)
 
     # Sample surface points
     pts_gen = sample_points(mesh_gen, n_points)
