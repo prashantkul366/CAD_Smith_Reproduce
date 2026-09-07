@@ -38,7 +38,11 @@ def main() -> int:
         print("           bash:        unset AWS_PROFILE")
     print(f"  coder model : {agents.CODER_MODEL}")
     print(f"  judge model : {agents.JUDGE_MODEL}")
-    print(f"  max tokens  : {agents.MAX_TOKENS}")
+    import inspect as _inspect
+    _coder_budget = (agents.CODER_MAX_TOKENS
+                     or _inspect.signature(agents._call_claude).parameters["max_tokens"].default)
+    print(f"  coder budget: {_coder_budget} tokens")
+    print(f"  judge budget: {agents.MAX_TOKENS} tokens")
     import ssl
     from autofab import _ssl_compat
     if _ssl_compat.UNDONE:
@@ -109,6 +113,11 @@ def main() -> int:
 
     # --- 4. text call -------------------------------------------------------
     print("\n[4/5] live text call (coder model)")
+    import inspect as _i
+    _default_model = _i.signature(agents._call_claude).parameters["model"].default
+    if _default_model is not None:
+        print(f"{WARN} _call_claude has a hard-coded default model "
+              f"({_default_model!r}); CODER_MODEL is being bypassed.")
     try:
         agents.reset_token_usage()
         out = agents._call_claude(
