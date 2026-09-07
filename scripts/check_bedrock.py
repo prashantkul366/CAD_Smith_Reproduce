@@ -21,7 +21,6 @@ OK, BAD, WARN = "  [OK]  ", "  [FAIL]", "  [WARN]"
 
 
 def main() -> int:
-    os.environ.setdefault("LLM_BACKEND", "bedrock")
     from autofab import agents
 
     print("=" * 68)
@@ -54,9 +53,26 @@ def main() -> int:
         print(f"{WARN} ssl.SSLContext is {ssl.SSLContext.__module__} and could not")
         print("         be un-injected - HTTPS calls may fail with RecursionError.")
 
+    # Where did the backend come from? A stale .env silently overriding the
+    # intended backend is exactly the failure this preflight exists to catch.
+    dotenv = PROJECT_ROOT / ".env"
+    if dotenv.exists():
+        for line in dotenv.read_text(errors="ignore").splitlines():
+            line = line.strip()
+            if line.startswith("LLM_BACKEND"):
+                print(f"  .env        : {line}")
+            elif line.startswith(("VLLM_", "AWS_REGION", "CODER_MODEL", "JUDGE_MODEL")):
+                print(f"  .env        : {line.split('=')[0]}=...")
+
     if agents.LLM_BACKEND != "bedrock":
-        print(f"\n{BAD} LLM_BACKEND is '{agents.LLM_BACKEND}', not 'bedrock'.")
-        print("        PowerShell:  $env:LLM_BACKEND='bedrock'")
+        print(f"\n{BAD} LLM_BACKEND resolves to '{agents.LLM_BACKEND}', not 'bedrock'.")
+        print("        The benchmark will use that backend too - this preflight")
+        print("        deliberately does not override it.")
+        if dotenv.exists():
+            print(f"        Check {dotenv} - a stale LLM_BACKEND there is the usual cause.")
+        print("        Fix by editing .env, or for this session only:")
+        print("          PowerShell:  $env:LLM_BACKEND='bedrock'")
+        print("          bash:        export LLM_BACKEND=bedrock")
         return 1
 
     # --- 1. credentials -----------------------------------------------------
