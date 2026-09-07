@@ -45,6 +45,8 @@ def main() -> int:
     print(f"  judge budget: {agents.MAX_TOKENS} tokens")
     import ssl
     from autofab import _ssl_compat
+    if _ssl_compat.CA_BUNDLE:
+        print(f"  ca bundle   : {_ssl_compat.CA_BUNDLE} (auto-detected)")
     if _ssl_compat.UNDONE:
         print(f"  ssl         : repaired a global truststore injection "
               f"(now {ssl.SSLContext.__module__}.{ssl.SSLContext.__name__})")

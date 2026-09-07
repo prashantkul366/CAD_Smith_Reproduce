@@ -54,6 +54,32 @@ def undo_pip_truststore_injection() -> bool:
     return False
 
 
+def use_local_ca_bundle():
+    """Point every TLS stack at a repo-local CA bundle, if one exists.
+
+    Networks that inspect TLS need their corporate root CA, which lives in the
+    Windows certificate store rather than in certifi. Once
+    scripts/export_windows_ca_bundle.ps1 has written corp-ca-bundle.pem, wire it
+    up automatically so it does not have to be re-exported into environment
+    variables in every new shell - a step that is easy to forget and surfaces as
+    a confusing CERTIFICATE_VERIFY_FAILED.
+
+    Explicit environment variables always win; this only fills in the blanks.
+    Returns the bundle path if one was applied, else None.
+    """
+    import os
+    import pathlib as _p
+
+    bundle = _p.Path(__file__).resolve().parent.parent / "corp-ca-bundle.pem"
+    if not bundle.exists():
+        return None
+    for var in ("SSL_CERT_FILE", "AWS_CA_BUNDLE", "REQUESTS_CA_BUNDLE"):
+        os.environ.setdefault(var, str(bundle))
+    return str(bundle)
+
+
+CA_BUNDLE = use_local_ca_bundle()
+
 # Escape hatch: set AUTOFAB_KEEP_TRUSTSTORE=1 to leave the injection alone
 # (for example on a machine where the Windows store is the only source of a
 # corporate root CA and httpx happens to work anyway).

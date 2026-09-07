@@ -43,3 +43,6 @@ experiments/logs/
 .DS_Store
 Thumbs.db
 models/
+
+# Machine-specific CA bundle from scripts/export_windows_ca_bundle.ps1
+corp-ca-bundle.pem
