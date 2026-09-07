@@ -97,7 +97,7 @@ class Pipeline:
         self.max_refinements = max_refinement_iterations
         self.verbose = verbose
         self.use_vision = use_vision
-        self.executor = Executor(output_dir=str(self.output_dir), timeout_seconds=60)
+        self.executor = Executor(output_dir=str(self.output_dir))
         self.validator = Validator()
 
     def log(self, msg: str):

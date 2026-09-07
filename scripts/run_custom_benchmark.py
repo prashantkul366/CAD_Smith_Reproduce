@@ -85,7 +85,7 @@ def generate_reference_stl(reference_code: str, entry_id: str, output_dir: Path)
     if ref_stl_path.exists():
         return str(ref_stl_path)
 
-    executor = Executor(output_dir=str(ref_stl_dir), timeout_seconds=60)
+    executor = Executor(output_dir=str(ref_stl_dir))
     result = executor.execute(reference_code, name=entry_id)
 
     if not result.success:

@@ -115,8 +115,15 @@ print(json.dumps(_autofab_output))
 class Executor:
     """Executes CadQuery scripts in a sandboxed subprocess."""
 
-    def __init__(self, output_dir: Optional[str] = None, timeout_seconds: int = 60):
-        self.timeout = timeout_seconds
+    # A CadQuery build that is merely SLOW is not a code error, but a timeout is
+    # reported as one: the Error Refiner then "fixes" working code, inflating the
+    # LLM call count and recording a failure that never happened. Machines with
+    # slow file I/O (network drives, OneDrive-synced folders, cold OCCT caches)
+    # routinely need far more than 60s, so the default is generous and tunable.
+    DEFAULT_TIMEOUT = int(os.getenv("EXEC_TIMEOUT", "300"))
+
+    def __init__(self, output_dir: Optional[str] = None, timeout_seconds: int = None):
+        self.timeout = timeout_seconds if timeout_seconds is not None else self.DEFAULT_TIMEOUT
         if output_dir:
             self.output_dir = Path(output_dir).resolve()
             self.output_dir.mkdir(parents=True, exist_ok=True)
