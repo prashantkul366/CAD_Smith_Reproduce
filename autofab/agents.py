@@ -58,8 +58,14 @@ def _model_id(name: str) -> str:
 CODER_MODEL = _model_id(os.getenv("CODER_MODEL", _DEFAULT_CODER))
 JUDGE_MODEL = _model_id(os.getenv("JUDGE_MODEL", _DEFAULT_JUDGE))
 
-# Generous ceiling: these models think adaptively by default and thinking
-# tokens count against max_tokens, so 4096 truncates scripts mid-function.
+# Output budget for the text agents (Planner / Coder / Refiners). On models with
+# adaptive thinking the thinking tokens share this budget, so a long T3 script
+# can truncate mid-function; _call_claude warns when that happens. Unset by
+# default so the per-call default in the signature applies.
+CODER_MAX_TOKENS = int(os.getenv("CODER_MAX_TOKENS", "0")) or None
+
+# The Judge reasons over a rendered image and returns JSON feedback, so it needs
+# considerably more room than the coder.
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "16000"))
 LOCAL_STREAM = os.getenv("VLLM_STREAM", "1").strip().lower() not in ("0", "false", "no")
 
@@ -268,8 +274,13 @@ def _anthropic_blocks_to_openai(blocks: list) -> list:
     return out
 
 
-def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
-    """Call the configured LLM backend and return the text response. Tracks token usage."""
+def _call_claude(system: str, user: str, model: str = None, max_tokens: int = 4096) -> str:
+    """Call the configured LLM backend and return the text response.
+
+    model=None selects CODER_MODEL, which carries the `anthropic.` prefix that
+    Bedrock requires. Passing a bare literal here would bypass that.
+    max_tokens is the per-call default; CODER_MAX_TOKENS overrides it globally.
+    """
     if LLM_BACKEND == "local":
         text, usage = _call_local_llm(system, user, max_tokens=max_tokens)
         _token_usage["input_tokens"] += usage.get("input_tokens", 0)
@@ -278,9 +289,10 @@ def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-2025092
         return text.strip()
 
     client = _get_client()
+    budget = CODER_MAX_TOKENS or max_tokens
     response = client.messages.create(
         model=model or CODER_MODEL,
-        max_tokens=max_tokens or MAX_TOKENS,
+        max_tokens=budget,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
@@ -288,6 +300,10 @@ def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-2025092
         _token_usage["input_tokens"] += response.usage.input_tokens
         _token_usage["output_tokens"] += response.usage.output_tokens
     _token_usage["calls"] += 1
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        _token_usage["truncated"] = _token_usage.get("truncated", 0) + 1
+        print(f"  WARN: output truncated at max_tokens={budget}. The script is "
+              f"incomplete; raise CODER_MAX_TOKENS if this recurs.")
     return _response_text(response)
 
 
