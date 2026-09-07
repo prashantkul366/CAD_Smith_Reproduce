@@ -3,9 +3,14 @@ cadquery>=2.4
 numpy
 numpy-stl
 trimesh
+scipy          # metrics.py: KDTree for Chamfer/F1
+vtk            # render.py: offscreen three-view rendering
 
 # LLM
 anthropic>=0.40.0
+requests       # agents.py: LLM_BACKEND=local (OpenAI-compatible shim)
+# For LLM_BACKEND=bedrock (Claude on Amazon Bedrock):
+#   pip install "anthropic[bedrock]" boto3
 
 # Environment
 python-dotenv

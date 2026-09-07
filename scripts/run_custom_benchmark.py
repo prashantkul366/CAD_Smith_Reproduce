@@ -425,8 +425,12 @@ def main():
         "max_error_retries": args.max_error_retries,
         "limit_per_tier": args.limit_per_tier,
         # "model": "claude-sonnet",
-        "model": agents.LOCAL_MODEL_ID if agents.LLM_BACKEND == "local" else "claude-sonnet",
         "backend": agents.LLM_BACKEND,
+        "model": (agents.LOCAL_MODEL_ID if agents.LLM_BACKEND == "local"
+                  else agents.CODER_MODEL),
+        "judge_model": (agents.LOCAL_MODEL_ID if agents.LLM_BACKEND == "local"
+                        else agents.JUDGE_MODEL),
+        "aws_region": agents.AWS_REGION if agents.LLM_BACKEND == "bedrock" else None,
         "pipeline": "full" if args.mode == "refinement" else "single-shot",
         "rag_config": "kb1+kb2",
         "vision": not args.no_vision,
