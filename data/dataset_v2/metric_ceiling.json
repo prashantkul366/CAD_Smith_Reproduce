@@ -1,0 +1,702 @@
+{
+ "T1_001": {
+  "chamfer_distance": 0.39058163098040544,
+  "f1_score": 0.9951993569131833,
+  "volumetric_iou": 1.0,
+  "precision": 0.996,
+  "recall": 0.9944
+ },
+ "T1_002": {
+  "chamfer_distance": 0.2567217048468176,
+  "f1_score": 0.9995999899959984,
+  "volumetric_iou": 0.9967160775370582,
+  "precision": 0.9995,
+  "recall": 0.9997
+ },
+ "T1_003": {
+  "chamfer_distance": 0.17962341377286034,
+  "f1_score": 0.9997999599919984,
+  "volumetric_iou": 0.9956527139485778,
+  "precision": 1.0,
+  "recall": 0.9996
+ },
+ "T1_004": {
+  "chamfer_distance": 0.18784554992963676,
+  "f1_score": 0.9999,
+  "volumetric_iou": 0.9727149789197359,
+  "precision": 0.9999,
+  "recall": 0.9999
+ },
+ "T1_005": {
+  "chamfer_distance": 0.6270833814820203,
+  "f1_score": 0.9601944907310977,
+  "volumetric_iou": 1.0,
+  "precision": 0.9579,
+  "recall": 0.9625
+ },
+ "T1_006": {
+  "chamfer_distance": 0.8055299818297366,
+  "f1_score": 0.9173496702458167,
+  "volumetric_iou": 0.7843531894173024,
+  "precision": 0.9179,
+  "recall": 0.9168
+ },
+ "T1_007": {
+  "chamfer_distance": 0.1664464422639211,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9977975508765747,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T1_008": {
+  "chamfer_distance": 0.372451474838748,
+  "f1_score": 0.9947499773812516,
+  "volumetric_iou": 0.9641156183281328,
+  "precision": 0.9946,
+  "recall": 0.9949
+ },
+ "T1_009": {
+  "chamfer_distance": 0.2663342991378165,
+  "f1_score": 0.9992495771828873,
+  "volumetric_iou": 0.9971084337349397,
+  "precision": 0.9999,
+  "recall": 0.9986
+ },
+ "T1_010": {
+  "chamfer_distance": 0.24986737391599445,
+  "f1_score": 0.9995499974988745,
+  "volumetric_iou": 1.0,
+  "precision": 0.9996,
+  "recall": 0.9995
+ },
+ "T1_011": {
+  "chamfer_distance": 0.5038665086691101,
+  "f1_score": 0.9818999083409716,
+  "volumetric_iou": 1.0,
+  "precision": 0.9822,
+  "recall": 0.9816
+ },
+ "T1_012": {
+  "chamfer_distance": 0.27709982352771956,
+  "f1_score": 0.9996499974991248,
+  "volumetric_iou": 0.9995263189057967,
+  "precision": 0.9996,
+  "recall": 0.9997
+ },
+ "T1_013": {
+  "chamfer_distance": 0.21545439110353107,
+  "f1_score": 0.999949997499875,
+  "volumetric_iou": 1.0,
+  "precision": 0.9999,
+  "recall": 1.0
+ },
+ "T1_014": {
+  "chamfer_distance": 0.26239595213519984,
+  "f1_score": 0.9995499974988745,
+  "volumetric_iou": 0.9448742276066754,
+  "precision": 0.9996,
+  "recall": 0.9995
+ },
+ "T1_015": {
+  "chamfer_distance": 0.28525553552560967,
+  "f1_score": 0.9990498773835144,
+  "volumetric_iou": 0.9979889796082533,
+  "precision": 0.9987,
+  "recall": 0.9994
+ },
+ "T1_016": {
+  "chamfer_distance": 0.23240098260073822,
+  "f1_score": 0.999849997499625,
+  "volumetric_iou": 0.9583935118320187,
+  "precision": 0.9999,
+  "recall": 0.9998
+ },
+ "T1_017": {
+  "chamfer_distance": 0.9171160847781588,
+  "f1_score": 0.8872963484728953,
+  "volumetric_iou": 0.8130514523644294,
+  "precision": 0.8891,
+  "recall": 0.8855
+ },
+ "T1_018": {
+  "chamfer_distance": 0.23107305453658153,
+  "f1_score": 0.9998999899989999,
+  "volumetric_iou": 0.9944392413954577,
+  "precision": 1.0,
+  "recall": 0.9998
+ },
+ "T1_019": {
+  "chamfer_distance": 0.9830063447751369,
+  "f1_score": 0.8704353819643882,
+  "volumetric_iou": 0.9166675486035412,
+  "precision": 0.878,
+  "recall": 0.863
+ },
+ "T1_020": {
+  "chamfer_distance": 0.5598676770490305,
+  "f1_score": 0.971099907321594,
+  "volumetric_iou": 1.0,
+  "precision": 0.9714,
+  "recall": 0.9708
+ },
+ "T1_021": {
+  "chamfer_distance": 0.38126663538714867,
+  "f1_score": 0.995299989952778,
+  "volumetric_iou": 0.963720115730166,
+  "precision": 0.9954,
+  "recall": 0.9952
+ },
+ "T1_022": {
+  "chamfer_distance": 0.038572333595790445,
+  "f1_score": 1.0,
+  "volumetric_iou": 1.0,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T1_023": {
+  "chamfer_distance": 0.29729417667897184,
+  "f1_score": 0.9984499774650708,
+  "volumetric_iou": 0.9125530186806244,
+  "precision": 0.9986,
+  "recall": 0.9983
+ },
+ "T1_024": {
+  "chamfer_distance": 0.31257080853822267,
+  "f1_score": 0.9986499374155108,
+  "volumetric_iou": 0.9923063653613938,
+  "precision": 0.9989,
+  "recall": 0.9984
+ },
+ "T1_025": {
+  "chamfer_distance": 0.2439912788992601,
+  "f1_score": 0.999849997499625,
+  "volumetric_iou": 0.9969437652811736,
+  "precision": 0.9999,
+  "recall": 0.9998
+ },
+ "T1_026": {
+  "chamfer_distance": 0.877721112670035,
+  "f1_score": 0.9005986564512547,
+  "volumetric_iou": 0.9883056303790815,
+  "precision": 0.8995,
+  "recall": 0.9017
+ },
+ "T1_027": {
+  "chamfer_distance": 0.6370669046935957,
+  "f1_score": 0.9560979500052297,
+  "volumetric_iou": 0.9742698574058302,
+  "precision": 0.9547,
+  "recall": 0.9575
+ },
+ "T1_028": {
+  "chamfer_distance": 0.26232858018562377,
+  "f1_score": 0.9992499774831124,
+  "volumetric_iou": 0.9679825664236024,
+  "precision": 0.9994,
+  "recall": 0.9991
+ },
+ "T1_029": {
+  "chamfer_distance": 0.2593531972847001,
+  "f1_score": 0.999699989996999,
+  "volumetric_iou": 1.0,
+  "precision": 0.9998,
+  "recall": 0.9996
+ },
+ "T1_030": {
+  "chamfer_distance": 0.25154548899955836,
+  "f1_score": 0.9997499974993749,
+  "volumetric_iou": 0.9998548937096423,
+  "precision": 0.9997,
+  "recall": 0.9998
+ },
+ "T1_031": {
+  "chamfer_distance": 2.267764204069843,
+  "f1_score": 0.5828499613965857,
+  "volumetric_iou": 0.9959518141627646,
+  "precision": 0.5827,
+  "recall": 0.583
+ },
+ "T1_032": {
+  "chamfer_distance": 0.255030088227129,
+  "f1_score": 0.9997,
+  "volumetric_iou": 0.9951368963672615,
+  "precision": 0.9997,
+  "recall": 0.9997
+ },
+ "T1_033": {
+  "chamfer_distance": 0.33838593210103163,
+  "f1_score": 0.9972496966658311,
+  "volumetric_iou": 0.9964859437751004,
+  "precision": 0.9978,
+  "recall": 0.9967
+ },
+ "T1_034": {
+  "chamfer_distance": 0.1112151472307189,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9998641488928135,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T1_035": {
+  "chamfer_distance": 0.5962743560560386,
+  "f1_score": 0.9666973518154547,
+  "volumetric_iou": 0.9545109497414744,
+  "precision": 0.9651,
+  "recall": 0.9683
+ },
+ "T1_036": {
+  "chamfer_distance": 0.6275036675409594,
+  "f1_score": 0.9585949509701649,
+  "volumetric_iou": 0.4932927409380649,
+  "precision": 0.9608,
+  "recall": 0.9564
+ },
+ "T1_037": {
+  "chamfer_distance": 0.3641819842084776,
+  "f1_score": 0.9963496963918301,
+  "volumetric_iou": 0.9997039960532808,
+  "precision": 0.9958,
+  "recall": 0.9969
+ },
+ "T1_038": {
+  "chamfer_distance": 0.3570064727220486,
+  "f1_score": 0.9970999899709156,
+  "volumetric_iou": 0.9503712574850299,
+  "precision": 0.997,
+  "recall": 0.9972
+ },
+ "T1_039": {
+  "chamfer_distance": 0.09119728867365709,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9404994571118349,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T1_040": {
+  "chamfer_distance": 0.16231487206942818,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.61390356108366,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T1_041": {
+  "chamfer_distance": 0.23776839115420068,
+  "f1_score": 0.9997999899979997,
+  "volumetric_iou": 0.9972001343935492,
+  "precision": 0.9999,
+  "recall": 0.9997
+ },
+ "T1_042": {
+  "chamfer_distance": 0.3194077239967307,
+  "f1_score": 0.9978498772360574,
+  "volumetric_iou": 1.0,
+  "precision": 0.9975,
+  "recall": 0.9982
+ },
+ "T1_043": {
+  "chamfer_distance": 0.4741857376214801,
+  "f1_score": 0.9866499366543354,
+  "volumetric_iou": 0.9975803664016591,
+  "precision": 0.9869,
+  "recall": 0.9864
+ },
+ "T1_044": {
+  "chamfer_distance": 0.6428914617864079,
+  "f1_score": 0.9571437287781436,
+  "volumetric_iou": 1.0,
+  "precision": 0.9547,
+  "recall": 0.9596
+ },
+ "T1_045": {
+  "chamfer_distance": 0.7120227382692372,
+  "f1_score": 0.9393494011816682,
+  "volumetric_iou": 0.973422806940091,
+  "precision": 0.9386,
+  "recall": 0.9401
+ },
+ "T1_046": {
+  "chamfer_distance": 0.13524846993995954,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9984401114206128,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T1_047": {
+  "chamfer_distance": 0.6209795827570399,
+  "f1_score": 0.9585264618434094,
+  "volumetric_iou": 0.9701565431971827,
+  "precision": 0.9633,
+  "recall": 0.9538
+ },
+ "T1_048": {
+  "chamfer_distance": 1.6834205766215296,
+  "f1_score": 0.6946413589577486,
+  "volumetric_iou": 1.0,
+  "precision": 0.6971,
+  "recall": 0.6922
+ },
+ "T1_049": {
+  "chamfer_distance": 0.23939308935674714,
+  "f1_score": 0.999849997499625,
+  "volumetric_iou": 0.9969627429805615,
+  "precision": 0.9999,
+  "recall": 0.9998
+ },
+ "T1_050": {
+  "chamfer_distance": 0.5312211604184871,
+  "f1_score": 0.9772494244052188,
+  "volumetric_iou": 1.0,
+  "precision": 0.9765,
+  "recall": 0.978
+ },
+ "T2_001": {
+  "chamfer_distance": 0.04086071809085936,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9953596287703016,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_002": {
+  "chamfer_distance": 0.06751413585358294,
+  "f1_score": 1.0,
+  "volumetric_iou": 1.0,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_003": {
+  "chamfer_distance": 0.11805825774712667,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9190848214285714,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_004": {
+  "chamfer_distance": 0.08165623267788227,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9080128205128205,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_005": {
+  "chamfer_distance": 0.9996552087125073,
+  "f1_score": 0.8626464498927723,
+  "volumetric_iou": 1.0,
+  "precision": 0.8644,
+  "recall": 0.8609
+ },
+ "T2_006": {
+  "chamfer_distance": 0.5102184904230275,
+  "f1_score": 0.9802494261667942,
+  "volumetric_iou": 0.8934469585659712,
+  "precision": 0.9795,
+  "recall": 0.981
+ },
+ "T2_007": {
+  "chamfer_distance": 1.0054684393212616,
+  "f1_score": 0.864471081550029,
+  "volumetric_iou": 1.0,
+  "precision": 0.8595,
+  "recall": 0.8695
+ },
+ "T2_008": {
+  "chamfer_distance": 0.6971352725016051,
+  "f1_score": 0.9432499337397297,
+  "volumetric_iou": 0.8283654979623455,
+  "precision": 0.9435,
+  "recall": 0.943
+ },
+ "T2_009": {
+  "chamfer_distance": 0.2820749563111259,
+  "f1_score": 0.9990499774786047,
+  "volumetric_iou": 0.9423241485538251,
+  "precision": 0.9989,
+  "recall": 0.9992
+ },
+ "T2_010": {
+  "chamfer_distance": 0.1414148558154225,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9847847847847848,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_011": {
+  "chamfer_distance": 0.0684396944502694,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9989224137931034,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_012": {
+  "chamfer_distance": 0.436648223707119,
+  "f1_score": 0.9913499369546578,
+  "volumetric_iou": 0.9999068337448176,
+  "precision": 0.9911,
+  "recall": 0.9916
+ },
+ "T2_013": {
+  "chamfer_distance": 0.4750618358843257,
+  "f1_score": 0.9849999086294416,
+  "volumetric_iou": 0.9983256053580628,
+  "precision": 0.9847,
+  "recall": 0.9853
+ },
+ "T2_014": {
+  "chamfer_distance": 1.3817790999254174,
+  "f1_score": 0.7622998819362455,
+  "volumetric_iou": 1.0,
+  "precision": 0.762,
+  "recall": 0.7626
+ },
+ "T2_015": {
+  "chamfer_distance": 0.29076063116065204,
+  "f1_score": 0.9987999599519424,
+  "volumetric_iou": 0.9998071359691417,
+  "precision": 0.9986,
+  "recall": 0.999
+ },
+ "T2_016": {
+  "chamfer_distance": 0.08402229697075814,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9640383590836441,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_017": {
+  "chamfer_distance": 0.7246403201104668,
+  "f1_score": 0.934999614973262,
+  "volumetric_iou": 0.9015541971313277,
+  "precision": 0.9356,
+  "recall": 0.9344
+ },
+ "T2_018": {
+  "chamfer_distance": 0.2162728517259258,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.9969135802469136,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_019": {
+  "chamfer_distance": 0.25232717828880935,
+  "f1_score": 0.9994499374656062,
+  "volumetric_iou": 0.9477325134511914,
+  "precision": 0.9992,
+  "recall": 0.9997
+ },
+ "T2_020": {
+  "chamfer_distance": 0.5305003682085578,
+  "f1_score": 0.9784492615872041,
+  "volumetric_iou": 0.9990203015294181,
+  "precision": 0.9793,
+  "recall": 0.9776
+ },
+ "T2_021": {
+  "chamfer_distance": 0.7237823261236147,
+  "f1_score": 0.9347627620881472,
+  "volumetric_iou": 1.0,
+  "precision": 0.9289,
+  "recall": 0.9407
+ },
+ "T2_022": {
+  "chamfer_distance": 0.08611634116865699,
+  "f1_score": 1.0,
+  "volumetric_iou": 0.8183453237410072,
+  "precision": 1.0,
+  "recall": 1.0
+ },
+ "T2_023": {
+  "chamfer_distance": 0.3064661039600165,
+  "f1_score": 0.9986499974966205,
+  "volumetric_iou": 0.9044804985494789,
+  "precision": 0.9986,
+  "recall": 0.9987
+ },
+ "T2_024": {
+  "chamfer_distance": 0.32067790820230413,
+  "f1_score": 0.9987498773466833,
+  "volumetric_iou": 0.9956558894744338,
+  "precision": 0.9984,
+  "recall": 0.9991
+ },
+ "T2_025": {
+  "chamfer_distance": 0.3995364622303519,
+  "f1_score": 0.9926490908175087,
+  "volumetric_iou": 0.9600375234521576,
+  "precision": 0.9936,
+  "recall": 0.9917
+ },
+ "T3_001": {
+  "chamfer_distance": 0.9927672736874003,
+  "f1_score": 0.8673939013142726,
+  "volumetric_iou": 0.9999567530164771,
+  "precision": 0.8651,
+  "recall": 0.8697
+ },
+ "T3_002": {
+  "chamfer_distance": 1.2427239366924812,
+  "f1_score": 0.80014862213335,
+  "volumetric_iou": 0.796812749003984,
+  "precision": 0.8012,
+  "recall": 0.7991
+ },
+ "T3_003": {
+  "chamfer_distance": 1.5039629857832335,
+  "f1_score": 0.7372945747999458,
+  "volumetric_iou": 0.9998408276959809,
+  "precision": 0.7393,
+  "recall": 0.7353
+ },
+ "T3_004": {
+  "chamfer_distance": 0.7342009589259213,
+  "f1_score": 0.931594321597252,
+  "volumetric_iou": 0.9984988123515439,
+  "precision": 0.9293,
+  "recall": 0.9339
+ },
+ "T3_005": {
+  "chamfer_distance": 0.9293697732405317,
+  "f1_score": 0.8865999548838258,
+  "volumetric_iou": 0.9961285810625172,
+  "precision": 0.8868,
+  "recall": 0.8864
+ },
+ "T3_006": {
+  "chamfer_distance": 1.357206677329827,
+  "f1_score": 0.7682966679682417,
+  "volumetric_iou": 0.9843182522030463,
+  "precision": 0.7667,
+  "recall": 0.7699
+ },
+ "T3_007": {
+  "chamfer_distance": 0.9061228247258132,
+  "f1_score": 0.8879420913339714,
+  "volumetric_iou": 0.9799672297429095,
+  "precision": 0.8906,
+  "recall": 0.8853
+ },
+ "T3_008": {
+  "chamfer_distance": 0.5564569281947378,
+  "f1_score": 0.9751488694047069,
+  "volumetric_iou": 0.9457564826788266,
+  "precision": 0.9741,
+  "recall": 0.9762
+ },
+ "T3_009": {
+  "chamfer_distance": 0.6663998886166883,
+  "f1_score": 0.9488425989355537,
+  "volumetric_iou": 0.9970063501663139,
+  "precision": 0.9462,
+  "recall": 0.9515
+ },
+ "T3_010": {
+  "chamfer_distance": 0.8441874625488968,
+  "f1_score": 0.9076986669604495,
+  "volumetric_iou": 0.9357617216757378,
+  "precision": 0.9088,
+  "recall": 0.9066
+ },
+ "T3_011": {
+  "chamfer_distance": 0.4447471176341866,
+  "f1_score": 0.9884,
+  "volumetric_iou": 0.997339911007932,
+  "precision": 0.9884,
+  "recall": 0.9884
+ },
+ "T3_012": {
+  "chamfer_distance": 0.8339556347606549,
+  "f1_score": 0.9091499972501788,
+  "volumetric_iou": 0.9970383615992847,
+  "precision": 0.9091,
+  "recall": 0.9092
+ },
+ "T3_013": {
+  "chamfer_distance": 0.4677235827905061,
+  "f1_score": 0.98644942977343,
+  "volumetric_iou": 0.9924380920724614,
+  "precision": 0.9857,
+  "recall": 0.9872
+ },
+ "T3_014": {
+  "chamfer_distance": 0.7954950939062642,
+  "f1_score": 0.9200956526464515,
+  "volumetric_iou": 0.9749964348528782,
+  "precision": 0.9221,
+  "recall": 0.9181
+ },
+ "T3_015": {
+  "chamfer_distance": 1.4744520370490775,
+  "f1_score": 0.7426870607243841,
+  "volumetric_iou": 0.9800299960963984,
+  "precision": 0.7396,
+  "recall": 0.7458
+ },
+ "T3_016": {
+  "chamfer_distance": 0.24027724258565136,
+  "f1_score": 0.9998499774966245,
+  "volumetric_iou": 0.9880006486135885,
+  "precision": 1.0,
+  "recall": 0.9997
+ },
+ "T3_017": {
+  "chamfer_distance": 1.8120066171307458,
+  "f1_score": 0.6702906758167985,
+  "volumetric_iou": 0.9825685149776928,
+  "precision": 0.6678,
+  "recall": 0.6728
+ },
+ "T3_018": {
+  "chamfer_distance": 0.5398547680014544,
+  "f1_score": 0.9754438464298529,
+  "volumetric_iou": 0.8188868111318887,
+  "precision": 0.973,
+  "recall": 0.9779
+ },
+ "T3_019": {
+  "chamfer_distance": 0.6143706588010126,
+  "f1_score": 0.9633999065808594,
+  "volumetric_iou": 0.8038448695320326,
+  "precision": 0.9637,
+  "recall": 0.9631
+ },
+ "T3_020": {
+  "chamfer_distance": 1.0429610335096822,
+  "f1_score": 0.8557317674554484,
+  "volumetric_iou": 0.8039780162261189,
+  "precision": 0.8597,
+  "recall": 0.8518
+ },
+ "T3_021": {
+  "chamfer_distance": 1.0387879439991137,
+  "f1_score": 0.857049973747156,
+  "volumetric_iou": 0.9997982767067232,
+  "precision": 0.8572,
+  "recall": 0.8569
+ },
+ "T3_022": {
+  "chamfer_distance": 0.913275712315178,
+  "f1_score": 0.8881420931149018,
+  "volumetric_iou": 0.997609540108114,
+  "precision": 0.8855,
+  "recall": 0.8908
+ },
+ "T3_023": {
+  "chamfer_distance": 0.7025188066215087,
+  "f1_score": 0.9449933862433861,
+  "volumetric_iou": 0.8288888013550242,
+  "precision": 0.9475,
+  "recall": 0.9425
+ },
+ "T3_024": {
+  "chamfer_distance": 2.2731020942984537,
+  "f1_score": 0.5852999316589783,
+  "volumetric_iou": 0.9959662897068357,
+  "precision": 0.5855,
+  "recall": 0.5851
+ },
+ "T3_025": {
+  "chamfer_distance": 1.0970152315882848,
+  "f1_score": 0.837839613295936,
+  "volumetric_iou": 0.994106988360894,
+  "precision": 0.8408,
+  "recall": 0.8349
+ }
+}

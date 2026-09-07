@@ -45,6 +45,22 @@ BASELINES = {
 }
 
 
+BACKEND = "anthropic"
+MODEL_ID = ""
+
+
+def load_config(results_dir: Path):
+    """Read the experiment config so cost reporting matches the backend used."""
+    global BACKEND, MODEL_ID
+    cfg_file = results_dir / "config.json"
+    if not cfg_file.exists():
+        return {}
+    cfg = json.loads(cfg_file.read_text())
+    BACKEND = cfg.get("backend", "anthropic")
+    MODEL_ID = cfg.get("model", "")
+    return cfg
+
+
 def load_results(results_dir: Path) -> pd.DataFrame:
     """Load results.jsonl into a DataFrame."""
     results_file = results_dir / "results.jsonl"
@@ -68,8 +84,9 @@ def load_results(results_dir: Path) -> pd.DataFrame:
     flat = []
     for r in records:
         row = {
-            "uid": r["uid"],
-            "input": r.get("input", "")[:100],
+            "uid": r.get("id") or r.get("uid"),
+            "tier": r.get("tier", ""),
+            "input": (r.get("prompt") or r.get("input") or "")[:100],
             "success": r.get("success", False),
             "execution_success": r.get("execution_success", False),
             "num_iterations": r.get("num_iterations", 0),
@@ -78,7 +95,11 @@ def load_results(results_dir: Path) -> pd.DataFrame:
             "input_tokens": r.get("tokens", {}).get("input_tokens", 0),
             "output_tokens": r.get("tokens", {}).get("output_tokens", 0),
             "error": r.get("error"),
+            "refiner_noop": r.get("refiner_noop_total", 0),
         }
+        rep = r.get("repairs") or {}
+        for k in ("calls", "prose_stripped", "result_patched", "import_patched"):
+            row[f"repair_{k}"] = rep.get(k, 0)
 
         # Metrics
         metrics = r.get("metrics") or {}
@@ -129,15 +150,45 @@ def print_summary(df: pd.DataFrame, name: str):
     # Token / cost stats
     total_in = df["input_tokens"].sum()
     total_out = df["output_tokens"].sum()
-    cost_in = total_in / 1_000_000 * 3
-    cost_out = total_out / 1_000_000 * 15
-    total_cost = cost_in + cost_out
-    per_entry_cost = total_cost / total if total > 0 else 0
 
     print(f"\n  Tokens: {total_in:,} in / {total_out:,} out")
-    print(f"  Est. cost: ${total_cost:.2f} total, ${per_entry_cost:.4f}/entry")
+    if BACKEND == "local":
+        print(f"  Est. cost: $0.00 (local backend: {MODEL_ID})")
+    else:
+        total_cost = total_in / 1_000_000 * 3 + total_out / 1_000_000 * 15
+        per_entry_cost = total_cost / total if total > 0 else 0
+        print(f"  Est. cost: ${total_cost:.2f} total, ${per_entry_cost:.4f}/entry")
     print(f"  Avg LLM calls/entry: {df['num_llm_calls'].mean():.1f}")
     print(f"  Avg time/entry: {df['total_time_ms'].mean()/1000:.1f}s")
+
+    # Output-format repair rates (how often the model broke the Coder contract)
+    n_calls = df.get("repair_calls", pd.Series(dtype=int)).sum()
+    if n_calls:
+        print(f"\n  Coder output repairs (n={n_calls} code extractions):")
+        for label, col in (("missing `result =`", "repair_result_patched"),
+                           ("missing cadquery import", "repair_import_patched"),
+                           ("prose before code", "repair_prose_stripped")):
+            v = df[col].sum()
+            print(f"    {label:<26} {v:>5}  ({v / n_calls * 100:.1f}%)")
+    if "refiner_noop" in df:
+        print(f"  Error Refiner no-op returns: {df['refiner_noop'].sum()}")
+
+    # Per-tier breakdown
+    if "tier" in df.columns and df["tier"].astype(bool).any():
+        print(f"\n  {'Tier':<6} {'n':>4} {'Exec%':>8} {'Conv%':>8} "
+              f"{'CD med':>9} {'CD mean':>10} {'F1 med':>9} {'IoU med':>9}")
+        print(f"  {'-'*6} {'-'*4} {'-'*8} {'-'*8} {'-'*9} {'-'*10} {'-'*9} {'-'*9}")
+        for tier in sorted(t for t in df["tier"].unique() if t):
+            d = df[df["tier"] == tier]
+            v = d.dropna(subset=["cd"])
+            cdm = f"{v['cd'].median():.4f}" if len(v) else "—"
+            cdu = f"{v['cd'].mean():.4f}" if len(v) else "—"
+            f1m = f"{v['f1'].median():.4f}" if len(v) else "—"
+            ioum = f"{v['iou'].median():.4f}" if len(v) else "—"
+            print(f"  {tier:<6} {len(d):>4} "
+                  f"{d['execution_success'].sum()/len(d)*100:>7.1f}% "
+                  f"{d['success'].sum()/len(d)*100:>7.1f}% "
+                  f"{cdm:>9} {cdu:>10} {f1m:>9} {ioum:>9}")
 
     return valid
 
@@ -219,7 +270,7 @@ def print_convergence_analysis(results_dir: Path):
 
 def save_summary_csv(df: pd.DataFrame, output_path: Path):
     """Save per-entry results as CSV for data analysis."""
-    cols = ["uid", "execution_success", "success", "num_iterations",
+    cols = ["uid", "tier", "execution_success", "success", "num_iterations",
             "num_llm_calls", "total_time_ms", "input_tokens", "output_tokens",
             "cd", "f1", "iou", "precision", "recall", "volume", "is_valid", "error"]
     out_cols = [c for c in cols if c in df.columns]
@@ -238,14 +289,15 @@ def main():
     experiment_dir = Path(args.experiment_dir)
     name = experiment_dir.name
 
-    # Load config
+    # Load config (also sets BACKEND / MODEL_ID for cost reporting)
     config_file = experiment_dir / "config.json"
-    if config_file.exists():
-        with open(config_file) as f:
-            config = json.load(f)
+    config = load_config(experiment_dir)
+    if config:
         print(f"Config: mode={config.get('mode')}, "
               f"max_iter={config.get('max_iterations')}, "
-              f"model={config.get('model')}")
+              f"backend={config.get('backend')}, "
+              f"model={config.get('model')}, "
+              f"vision={config.get('vision')}")
 
     # Load and analyze
     df = load_results(experiment_dir)

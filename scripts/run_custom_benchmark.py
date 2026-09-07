@@ -85,7 +85,7 @@ def generate_reference_stl(reference_code: str, entry_id: str, output_dir: Path)
     if ref_stl_path.exists():
         return str(ref_stl_path)
 
-    executor = Executor(output_dir=str(ref_stl_dir), timeout_seconds=60)
+    executor = Executor(output_dir=str(ref_stl_dir))
     result = executor.execute(reference_code, name=entry_id)
 
     if not result.success:
@@ -425,8 +425,12 @@ def main():
         "max_error_retries": args.max_error_retries,
         "limit_per_tier": args.limit_per_tier,
         # "model": "claude-sonnet",
-        "model": agents.LOCAL_MODEL_ID if agents.LLM_BACKEND == "local" else "claude-sonnet",
         "backend": agents.LLM_BACKEND,
+        "model": (agents.LOCAL_MODEL_ID if agents.LLM_BACKEND == "local"
+                  else agents.CODER_MODEL),
+        "judge_model": (agents.LOCAL_MODEL_ID if agents.LLM_BACKEND == "local"
+                        else agents.JUDGE_MODEL),
+        "aws_region": agents.AWS_REGION if agents.LLM_BACKEND == "bedrock" else None,
         "pipeline": "full" if args.mode == "refinement" else "single-shot",
         "rag_config": "kb1+kb2",
         "vision": not args.no_vision,
@@ -496,6 +500,24 @@ def main():
         # Append result
         with open(results_file, "a") as f:
             f.write(json.dumps(record) + "\n")
+
+        # Credentials that expire mid-run would otherwise turn one failure into
+        # a failure for every remaining entry, each recorded as attempted - so
+        # resume would skip them all. Stop instead, and say what to do.
+        err = str(record.get("error") or "")
+        if any(m in err for m in ("401", "ExpiredToken", "InvalidClientTokenId",
+                                  "UnrecognizedClientException",
+                                  "AuthenticationError")):
+            print("\n" + "=" * 70)
+            print("STOPPING: the provider rejected our credentials.")
+            print("=" * 70)
+            print(f"  {err[:200]}")
+            print("\n  Short-lived credentials usually expire mid-run. To resume:")
+            print("    1. refresh them (re-copy from your AWS access portal)")
+            print(f"    2. python scripts/drop_failed_entries.py "
+                  f"{experiment_dir} --apply")
+            print(f"    3. re-run the same command; completed entries are kept")
+            break
 
         total_done += 1
         if record.get("execution_success"):

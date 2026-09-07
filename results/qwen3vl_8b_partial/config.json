@@ -1,0 +1,19 @@
+{
+  "experiment_name": "qwen3vl_full",
+  "dataset": "dataset_v2",
+  "tiers": [
+    "T1",
+    "T2",
+    "T3"
+  ],
+  "mode": "refinement",
+  "max_iterations": 5,
+  "max_error_retries": 3,
+  "limit_per_tier": 0,
+  "model": "Qwen/Qwen3-VL-8B-Instruct",
+  "backend": "local",
+  "pipeline": "full",
+  "rag_config": "kb1+kb2",
+  "vision": true,
+  "timestamp": "2026-09-07 06:44:44"
+}

@@ -9,6 +9,10 @@ import os
 import time
 from typing import Optional
 
+# MUST precede anthropic/httpx: repairs a global truststore injection that
+# otherwise makes every HTTPS call recurse to death. See _ssl_compat.
+from . import _ssl_compat  # noqa: F401
+
 import anthropic
 import requests
 from dotenv import load_dotenv
@@ -19,17 +23,98 @@ load_dotenv()
 # Backend selection
 # ---------------------------------------------------------------------------
 
-LLM_BACKEND = os.getenv("LLM_BACKEND", "anthropic").strip().lower()  # "anthropic" | "local"
+LLM_BACKEND = os.getenv("LLM_BACKEND", "anthropic").strip().lower()  # "anthropic" | "local" | "bedrock"
 LOCAL_BASE_URL = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1").rstrip("/")
 LOCAL_API_KEY = os.getenv("VLLM_API_KEY", "sgpbench-CHANGEME")
 LOCAL_MODEL_ID = os.getenv("VLLM_MODEL_ID", "Qwen/Qwen3-VL-8B-Instruct")
 LOCAL_TIMEOUT = float(os.getenv("VLLM_TIMEOUT", "600"))
+
+# --- Claude on Amazon Bedrock (LLM_BACKEND=bedrock) ---------------------------
+# Uses the ambient AWS credential chain (SSO profile, instance role, env vars);
+# no Anthropic API key required.
+AWS_REGION = os.getenv("AWS_REGION") or os.getenv("BEDROCK_REGION") or "us-east-1"
+def _clean(v):
+    """Ignore an unsubstituted placeholder like `<your-profile>` copied from docs."""
+    v = (v or "").strip()
+    return None if not v or (v.startswith("<") and v.endswith(">")) else v
+
+
+AWS_PROFILE = _clean(os.getenv("AWS_PROFILE"))
+
+# The pipeline pairs a coder with a STRONGER judge on purpose, so the Judge is
+# not grading its own homework. (The local backend serves every role from one
+# model, which forfeits that property - see docs/RUNNING.md.)
+_DEFAULT_CODER = "claude-sonnet-5"
+_DEFAULT_JUDGE = "claude-opus-5"
+
+
+def _model_id(name: str) -> str:
+    """Bedrock model IDs carry an `anthropic.` prefix; the direct API does not."""
+    if LLM_BACKEND == "bedrock" and not name.startswith("anthropic."):
+        return "anthropic." + name
+    return name
+
+
+CODER_MODEL = _model_id(os.getenv("CODER_MODEL", _DEFAULT_CODER))
+JUDGE_MODEL = _model_id(os.getenv("JUDGE_MODEL", _DEFAULT_JUDGE))
+
+# Output budget for the text agents (Planner / Coder / Refiners). On models with
+# adaptive thinking the thinking tokens share this budget, so a long T3 script
+# can truncate mid-function; _call_claude warns when that happens. Unset by
+# default so the per-call default in the signature applies.
+CODER_MAX_TOKENS = int(os.getenv("CODER_MAX_TOKENS", "0")) or None
+
+# The Judge reasons over a rendered image and returns JSON feedback, so it needs
+# considerably more room than the coder.
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "16000"))
+LOCAL_STREAM = os.getenv("VLLM_STREAM", "1").strip().lower() not in ("0", "false", "no")
+
+
+def _consume_sse(resp) -> dict:
+    """Fold an OpenAI-style SSE stream back into a non-streaming response dict.
+
+    Returns the same shape the rest of this module expects, so every caller is
+    unchanged whether the server streams or not.
+    """
+    import json as _json
+    parts, usage, finish = [], {}, None
+    for raw in resp.iter_lines(decode_unicode=True):
+        if not raw or not raw.startswith("data:"):
+            continue
+        body = raw[5:].strip()
+        if body == "[DONE]":
+            break
+        try:
+            ev = _json.loads(body)
+        except ValueError:
+            continue
+        for ch in ev.get("choices") or []:
+            piece = (ch.get("delta") or {}).get("content")
+            if piece:
+                parts.append(piece)
+            if ch.get("finish_reason"):
+                finish = ch["finish_reason"]
+        if ev.get("usage"):
+            usage = ev["usage"]
+    return {
+        "choices": [{"message": {"role": "assistant", "content": "".join(parts)},
+                     "finish_reason": finish}],
+        "usage": usage,
+    }
 
 # ---------------------------------------------------------------------------
 # Token usage tracking
 # ---------------------------------------------------------------------------
 
 _token_usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
+
+# Tunnel-level events, tracked so infrastructure losses are never reported as
+# model failures. Cumulative for the whole run (not reset per entry).
+_transport_stats = {"gateway_timeouts": 0, "budget_reductions": 0, "hard_failures": 0}
+
+
+def get_transport_stats() -> dict:
+    return dict(_transport_stats)
 
 
 def get_token_usage() -> dict:
@@ -48,7 +133,7 @@ def reset_token_usage():
 #     return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 
-# def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
+# def _call_claude(system: str, user: str, model: str = None, max_tokens: int = None) -> str:
 #     """Call Claude and return the text response. Tracks token usage."""
 #     client = _get_client()
 #     response = client.messages.create(
@@ -64,8 +149,43 @@ def reset_token_usage():
 #     _token_usage["calls"] += 1
 #     return response.content[0].text
 
-def _get_client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+_client = None
+
+
+def _get_client():
+    """Build (once) the client for the configured backend."""
+    global _client
+    if _client is not None:
+        return _client
+    if LLM_BACKEND == "bedrock":
+        from anthropic import AnthropicBedrockMantle
+        kwargs = {"aws_region": AWS_REGION}
+        if AWS_PROFILE:
+            kwargs["aws_profile"] = AWS_PROFILE
+        _client = AnthropicBedrockMantle(**kwargs)
+    else:
+        _client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    return _client
+
+
+def _response_text(response) -> str:
+    """First text block of a response.
+
+    `response.content[0]` is NOT safe: with adaptive thinking on (the default on
+    Opus 5) the first block is a thinking block with no `.text`, so the old
+    indexing raised AttributeError on every call.
+    """
+    if getattr(response, "stop_reason", None) == "refusal":
+        detail = getattr(response, "stop_details", None)
+        raise RuntimeError(
+            f"Model declined the request (category="
+            f"{getattr(detail, 'category', None)}): {getattr(detail, 'explanation', '')}"
+        )
+    for block in response.content:
+        if getattr(block, "type", None) == "text":
+            return block.text
+    raise ValueError(
+        f"No text block in response (stop_reason={getattr(response, 'stop_reason', None)})")
 
 
 def _call_local_llm(system: str, content, max_tokens: int = 4096,
@@ -79,6 +199,10 @@ def _call_local_llm(system: str, content, max_tokens: int = 4096,
         ],
         "max_tokens": max_tokens,
         "temperature": temperature,
+        # Stream so the tunnel sees bytes continuously. Cloudflare aborts any
+        # response whose origin is silent for ~100s (HTTP 524); with streaming
+        # its timer resets on every chunk, so generation length is unbounded.
+        "stream": LOCAL_STREAM,
     }
     headers = {"Authorization": f"Bearer {LOCAL_API_KEY}"}
 
@@ -88,9 +212,13 @@ def _call_local_llm(system: str, content, max_tokens: int = 4096,
             resp = requests.post(
                 f"{LOCAL_BASE_URL}/chat/completions",
                 json=payload, headers=headers, timeout=LOCAL_TIMEOUT,
+                stream=bool(payload.get("stream")),
             )
             resp.raise_for_status()
-            data = resp.json()
+            if payload.get("stream"):
+                data = _consume_sse(resp)
+            else:
+                data = resp.json()
             text = data["choices"][0]["message"]["content"]
             # usage = {
             #     "input_tokens": data.get("usage", {}).get("prompt_tokens", 0),
@@ -109,8 +237,25 @@ def _call_local_llm(system: str, content, max_tokens: int = 4096,
         
         except (requests.exceptions.RequestException, KeyError, ValueError) as e:
             last_err = e
+            # TRANSPORT COMPENSATION (not a model or harness change):
+            # Cloudflare quick tunnels abort any origin response taking >100s with
+            # a 524. At ~22 tok/s that caps a call at ~2170 output tokens, while
+            # agents request max_tokens=4096. Decoding is greedy, so a plain retry
+            # regenerates the identical over-long output and 524s again -- the
+            # entry is lost to the network, not to the model. On a gateway
+            # timeout, shrink the budget so the call fits inside the window.
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (502, 504, 524, 408, 522):
+                _transport_stats["gateway_timeouts"] += 1
+                shrunk = 1536 if payload["max_tokens"] > 1536 else 1024
+                if shrunk < payload["max_tokens"]:
+                    print(f"  WARN: HTTP {status} (tunnel timeout) — retrying with "
+                          f"max_tokens={shrunk} (was {payload['max_tokens']})")
+                    payload["max_tokens"] = shrunk
+                    _transport_stats["budget_reductions"] += 1
             if attempt < retries - 1:
                 time.sleep(5 * (attempt + 1))
+    _transport_stats["hard_failures"] += 1
     raise RuntimeError(f"Local LLM call to {LOCAL_BASE_URL} failed after {retries} attempts: {last_err}")
 
 
@@ -129,8 +274,13 @@ def _anthropic_blocks_to_openai(blocks: list) -> list:
     return out
 
 
-def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-20250929", max_tokens: int = 4096) -> str:
-    """Call the configured LLM backend and return the text response. Tracks token usage."""
+def _call_claude(system: str, user: str, model: str = None, max_tokens: int = 4096) -> str:
+    """Call the configured LLM backend and return the text response.
+
+    model=None selects CODER_MODEL, which carries the `anthropic.` prefix that
+    Bedrock requires. Passing a bare literal here would bypass that.
+    max_tokens is the per-call default; CODER_MAX_TOKENS overrides it globally.
+    """
     if LLM_BACKEND == "local":
         text, usage = _call_local_llm(system, user, max_tokens=max_tokens)
         _token_usage["input_tokens"] += usage.get("input_tokens", 0)
@@ -139,9 +289,10 @@ def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-2025092
         return text.strip()
 
     client = _get_client()
+    budget = CODER_MAX_TOKENS or max_tokens
     response = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
+        model=model or CODER_MODEL,
+        max_tokens=budget,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
@@ -149,7 +300,11 @@ def _call_claude(system: str, user: str, model: str = "claude-sonnet-4-5-2025092
         _token_usage["input_tokens"] += response.usage.input_tokens
         _token_usage["output_tokens"] += response.usage.output_tokens
     _token_usage["calls"] += 1
-    return response.content[0].text
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        _token_usage["truncated"] = _token_usage.get("truncated", 0) + 1
+        print(f"  WARN: output truncated at max_tokens={budget}. The script is "
+              f"incomplete; raise CODER_MAX_TOKENS if this recurs.")
+    return _response_text(response)
 
 
 import re
@@ -656,8 +811,8 @@ def evaluate_geometry(
 
     client = _get_client()
     response = client.messages.create(
-        model="claude-opus-4-20250514",
-        max_tokens=4096,
+        model=JUDGE_MODEL,
+        max_tokens=MAX_TOKENS,
         system=VALIDATOR_SYSTEM,
         messages=[{"role": "user", "content": message_content}],
     )
@@ -665,7 +820,7 @@ def evaluate_geometry(
         _token_usage["input_tokens"] += response.usage.input_tokens
         _token_usage["output_tokens"] += response.usage.output_tokens
     _token_usage["calls"] += 1
-    return _extract_json(response.content[0].text)
+    return _extract_json(_response_text(response))
 
 
 # ---------------------------------------------------------------------------
