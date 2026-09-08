@@ -501,15 +501,23 @@ def main():
         with open(results_file, "a") as f:
             f.write(json.dumps(record) + "\n")
 
-        # Credentials that expire mid-run would otherwise turn one failure into
-        # a failure for every remaining entry, each recorded as attempted - so
-        # resume would skip them all. Stop instead, and say what to do.
+        # Credentials that expire mid-run - or were never picked up at all -
+        # would otherwise turn one failure into a failure for every remaining
+        # entry, each recorded as attempted, so resume would skip them all.
+        # Stop instead, and say what to do. Both halves matter: a rejected
+        # credential and an absent one look nothing alike in the error text
+        # but cost exactly the same, and the absent case is the likelier one
+        # right after a session refresh.
         err = str(record.get("error") or "")
-        if any(m in err for m in ("401", "ExpiredToken", "InvalidClientTokenId",
+        if any(m in err for m in ("401", "ExpiredToken", "ExpiredTokenException",
+                                  "InvalidClientTokenId",
                                   "UnrecognizedClientException",
-                                  "AuthenticationError")):
+                                  "AuthenticationError",
+                                  "Could not resolve AWS credentials",
+                                  "Unable to locate credentials",
+                                  "NoCredentialsError")):
             print("\n" + "=" * 70)
-            print("STOPPING: the provider rejected our credentials.")
+            print("STOPPING: the provider would not accept our credentials.")
             print("=" * 70)
             print(f"  {err[:200]}")
             print("\n  Short-lived credentials usually expire mid-run. To resume:")
