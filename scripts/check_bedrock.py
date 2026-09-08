@@ -39,6 +39,8 @@ def main() -> int:
     print(f"  judge model : {agents.JUDGE_MODEL}")
     print(f"  coder budget: {agents.CODER_MAX_TOKENS} tokens")
     print(f"  judge budget: {agents.MAX_TOKENS} tokens")
+    print(f"  streaming   : above {agents.NONSTREAMING_MAX_TOKENS} tokens "
+          f"(required by the API, handled automatically)")
     for label, budget in (("CODER_MAX_TOKENS", agents.CODER_MAX_TOKENS),
                           ("MAX_TOKENS", agents.MAX_TOKENS)):
         if budget < agents.THINKING_FLOOR:

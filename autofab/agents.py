@@ -75,6 +75,14 @@ THINKING_FLOOR = 8192
 #: One retry, at double the budget, when a reply is cut off - see _call_claude.
 TRUNCATION_RETRY_CEILING = int(os.getenv("TRUNCATION_RETRY_CEILING", "32000"))
 
+#: Above this a request is refused outright unless it streams:
+#:     Streaming is required for operations that may take longer than 10 minutes
+#: because a budget this large could take longer to generate than the HTTP
+#: request is allowed to stay open. 16000 is the documented non-streaming
+#: default. The retry above is deliberately larger than a budget that just
+#: proved too small, so it lands over this line by design and streams.
+NONSTREAMING_MAX_TOKENS = int(os.getenv("NONSTREAMING_MAX_TOKENS", "16000"))
+
 #: The local backend budget. Left where it was: that model does not think
 #: adaptively, and the published Qwen3-VL baseline was measured at this value.
 LOCAL_MAX_TOKENS = 4096
@@ -311,6 +319,19 @@ def _warn_low_budget(budget: int) -> None:
           f"these models need with thinking on; replies may arrive empty.")
 
 
+def _create_one(client, budget: int, kwargs: dict):
+    """One request, streamed when the budget is too large to send any other way.
+
+    Streaming here is purely a transport decision - get_final_message()
+    assembles the same response object messages.create() would have returned,
+    so nothing downstream can tell which path was taken.
+    """
+    if budget <= NONSTREAMING_MAX_TOKENS:
+        return client.messages.create(max_tokens=budget, **kwargs)
+    with client.messages.stream(max_tokens=budget, **kwargs) as stream:
+        return stream.get_final_message()
+
+
 def _create_tracked(client, *, max_tokens: int, **kwargs):
     """One model call, usage tracked, retried once if the reply was cut off.
 
@@ -329,7 +350,7 @@ def _create_tracked(client, *, max_tokens: int, **kwargs):
     _warn_low_budget(max_tokens)
     budget, retried = max_tokens, False
     while True:
-        response = client.messages.create(max_tokens=budget, **kwargs)
+        response = _create_one(client, budget, kwargs)
         if hasattr(response, "usage") and response.usage:
             _token_usage["input_tokens"] += response.usage.input_tokens
             _token_usage["output_tokens"] += response.usage.output_tokens

@@ -93,7 +93,23 @@ No text block in response (stop_reason=max_tokens)
 That is a ceiling we set, not a model that could not build the part. A reply
 cut off at the budget is retried once with the budget doubled, up to
 `TRUNCATION_RETRY_CEILING` (32000), and the preflight warns about a budget
-under the floor. To check the wiring without spending anything:
+under the floor.
+
+There is a ceiling at the other end too. Above `NONSTREAMING_MAX_TOKENS`
+(16000, the documented non-streaming default) a request is refused unless it
+streams, because a budget that large could take longer to generate than the
+HTTP request may stay open:
+
+```
+Streaming is required for operations that may take longer than 10 minutes
+```
+
+The retry is larger than a budget that just proved too small, so it crosses
+that line by design and is sent over a stream. `get_final_message()` returns
+the same response object, so nothing downstream can tell which path was
+taken. Raising `CODER_MAX_TOKENS` past 16000 is therefore safe - it streams.
+
+To check all of this without spending anything:
 
 ```bash
 python scripts/check_token_budget.py

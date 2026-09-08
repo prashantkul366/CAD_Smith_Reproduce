@@ -53,25 +53,63 @@ class _Response:
         self.usage = _Usage(437, used)
 
 
+class _StreamCtx:
+    """What client.messages.stream() returns: a context manager whose
+    get_final_message() yields the same object create() would have."""
+
+    def __init__(self, response):
+        self._response = response
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        return self._response
+
+
 class FakeModel:
     """Spends `thinking_tokens` before writing anything.
 
     Under that budget the reply is thinking only and stops at max_tokens -
     exactly what Bedrock returned for the failed entries. At or above it the
     answer arrives.
+
+    It also refuses a large budget sent without streaming, the way the real
+    API does, so a regression there fails here instead of mid-benchmark.
     """
 
     def __init__(self, thinking_tokens: int):
         self.thinking_tokens = thinking_tokens
-        self.budgets = []
+        self.budgets = []      # every budget asked for, in order
+        self.streamed = []     # the subset that arrived over a stream
         self.messages = self
 
-    def create(self, *, max_tokens, **kwargs):
-        self.budgets.append(max_tokens)
+    def _reply(self, max_tokens):
         if max_tokens < self.thinking_tokens:
             return _Response([_Block("thinking")], "max_tokens", max_tokens)
         return _Response([_Block("thinking"), _Block("text", "import cadquery as cq")],
                          "end_turn", self.thinking_tokens + 200)
+
+    #: The line the real API draws, hard-coded on purpose: this stands in for
+    #: the service, so it must not move when our own setting moves. A budget
+    #: raised past it without switching to the streaming path fails here.
+    API_NONSTREAMING_LIMIT = 16000
+
+    def create(self, *, max_tokens, **kwargs):
+        self.budgets.append(max_tokens)
+        if max_tokens > self.API_NONSTREAMING_LIMIT:
+            raise RuntimeError(
+                "Streaming is required for operations that may take longer "
+                "than 10 minutes.")
+        return self._reply(max_tokens)
+
+    def stream(self, *, max_tokens, **kwargs):
+        self.budgets.append(max_tokens)
+        self.streamed.append(max_tokens)
+        return _StreamCtx(self._reply(max_tokens))
 
 
 def call(model: FakeModel, **kwargs):
@@ -92,6 +130,7 @@ def main() -> int:
     print(f"  text agents (CODER_MAX_TOKENS): {agents.CODER_MAX_TOKENS}")
     print(f"  vision judge (MAX_TOKENS)     : {agents.MAX_TOKENS}")
     print(f"  thinking floor                : {agents.THINKING_FLOOR}")
+    print(f"  streaming required above      : {agents.NONSTREAMING_MAX_TOKENS}")
     print(f"  retry ceiling                 : {agents.TRUNCATION_RETRY_CEILING}\n")
 
     # 1. The configured budget clears the floor.
@@ -138,6 +177,13 @@ def main() -> int:
           "cadquery" in out, f"budgets tried: {hardest.budgets}")
     check("the retry raised the budget", len(hardest.budgets) == 2
           and hardest.budgets[1] > hardest.budgets[0], str(hardest.budgets))
+    # A budget over the non-streaming line is refused outright unless it
+    # streams, and the retry is over that line by construction.
+    check("the raised budget was sent over a stream",
+          hardest.streamed == [hardest.budgets[1]],
+          f"streamed: {hardest.streamed}, all: {hardest.budgets}")
+    check("the first, smaller call did not stream",
+          hardest.budgets[0] not in hardest.streamed, str(hardest.streamed))
     check("the retry is counted as a transport event",
           agents.get_transport_stats()["budget_raises"] == 1,
           str(agents.get_transport_stats()["budget_raises"]))
@@ -186,6 +232,10 @@ def main() -> int:
                 "error": "No text block in response (stop_reason=max_tokens)"}
     check("a truncated entry is droppable, so a resume redoes it",
           drop.is_droppable(recorded), "")
+    check("a streaming-required failure is droppable too",
+          drop.is_droppable({"id": "T1_024", "tier": "T1", "error":
+                             "Streaming is required for operations that may "
+                             "take longer than 10 minutes."}), "")
     check("a real geometry failure is not",
           not drop.is_droppable({"id": "T3_001", "error": "IoU 0.31 below threshold"}),
           "")

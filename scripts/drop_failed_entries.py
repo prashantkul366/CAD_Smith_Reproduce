@@ -46,6 +46,9 @@ INFRA_MARKERS = (
 HARNESS_MARKERS = (
     "No text block in response",
     "stop_reason=max_tokens",
+    # A budget large enough that the request had to stream, sent without
+    # streaming. Also ours, and also nothing to do with the model.
+    "Streaming is required",
 )
 
 
