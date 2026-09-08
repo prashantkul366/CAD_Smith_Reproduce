@@ -43,7 +43,7 @@ _autofab_output = {{"success": False}}
 try:
     # Execute the generated CadQuery code
     _autofab_user_globals = {{}}
-    exec(open("{script_path}").read(), _autofab_user_globals)
+    exec(open("{script_path}", encoding="utf-8").read(), _autofab_user_globals)
 
     # Find the CadQuery result object - look for common variable names
     import cadquery as cq
@@ -145,7 +145,9 @@ class Executor:
         step_path = self.output_dir / f"{name}.step"
         stl_path = self.output_dir / f"{name}.stl"
 
-        script_path.write_text(cadquery_code)
+        # Explicit encoding on both sides: the default is the ANSI code page
+        # on Windows, so a degree sign in a comment fails the whole entry.
+        script_path.write_text(cadquery_code, encoding="utf-8")
 
         # Build the runner script
         runner_code = _RUNNER_TEMPLATE.format(
@@ -154,7 +156,7 @@ class Executor:
             stl_path=str(stl_path).replace("\\", "\\\\"),
         )
         runner_path = self.output_dir / f"{name}_runner.py"
-        runner_path.write_text(runner_code)
+        runner_path.write_text(runner_code, encoding="utf-8")
 
         # Execute in subprocess
         start_time = time.time()
@@ -163,9 +165,12 @@ class Executor:
                 [sys.executable, str(runner_path)],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=self.timeout,
                 cwd=str(self.output_dir),
-                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+                     "PYTHONIOENCODING": "utf-8"},
             )
             elapsed_ms = (time.time() - start_time) * 1000
 
