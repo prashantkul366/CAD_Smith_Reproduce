@@ -102,7 +102,11 @@ def generate_reference_stl(reference_code: str, entry_id: str, output_dir: Path)
     if ref_stl_path.exists():
         return str(ref_stl_path)
 
-    executor = Executor(output_dir=str(ref_stl_dir), timeout_seconds=60)
+    # Same executor budget the pipeline runs with. A 60s cap here was not a
+    # property of the baseline, it was a second difference between the two
+    # runs: two entries were recorded as zero-shot failures for hitting it
+    # while the pipeline had 300s for the same geometry.
+    executor = Executor(output_dir=str(ref_stl_dir))
     result = executor.execute(reference_code, name=entry_id)
 
     if not result.success:
@@ -177,7 +181,7 @@ def run_single_entry(entry: dict, output_dir: Path) -> dict:
     gen_stl_dir = output_dir / "generated_stls"
     gen_stl_dir.mkdir(parents=True, exist_ok=True)
 
-    executor = Executor(output_dir=str(gen_stl_dir), timeout_seconds=60)
+    executor = Executor(output_dir=str(gen_stl_dir))
     exec_result = executor.execute(code, name=entry_id)
 
     elapsed_ms = (time.time() - start_time) * 1000
