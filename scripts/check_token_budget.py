@@ -240,6 +240,35 @@ def main() -> int:
           not drop.is_droppable({"id": "T3_001", "error": "IoU 0.31 below threshold"}),
           "")
 
+    # 9. Both runners must go through the shared transport. A script that
+    #    builds its own client bypasses the backend, the model-id prefix, the
+    #    budget and the retry at once - which is how the zero-shot baseline
+    #    came to be pointed at a different provider and a different model
+    #    than the pipeline it is the baseline for.
+    import ast
+
+    for rel in ("scripts/run_zeroshot_baseline.py", "scripts/run_custom_benchmark.py"):
+        tree = ast.parse((PROJECT_ROOT / rel).read_text(encoding="utf-8"))
+        own_client, blind_index = [], []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                f = node.func
+                name = getattr(f, "attr", None) or getattr(f, "id", None)
+                if name in ("Anthropic", "AnthropicBedrockMantle", "AsyncAnthropic"):
+                    own_client.append(node.lineno)
+            # `response.content[0]` - index 0 is a thinking block on these
+            # models, and has no .text.
+            if (isinstance(node, ast.Subscript)
+                    and isinstance(node.value, ast.Attribute)
+                    and node.value.attr == "content"
+                    and isinstance(node.slice, ast.Constant)
+                    and node.slice.value == 0):
+                blind_index.append(node.lineno)
+        check(f"{Path(rel).name} builds no client of its own",
+              not own_client, f"line(s) {own_client}")
+        check(f"{Path(rel).name} never reads content[0]",
+              not blind_index, f"line(s) {blind_index}")
+
     print()
     if _failures:
         print(f"  {len(_failures)} check(s) failed: {', '.join(_failures)}")

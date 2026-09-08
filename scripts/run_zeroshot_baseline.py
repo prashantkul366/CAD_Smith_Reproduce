@@ -28,7 +28,6 @@ import sys
 import time
 from pathlib import Path
 
-import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -36,6 +35,7 @@ load_dotenv()
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from autofab import agents
 from autofab.executor import Executor
 from autofab.metrics import compare_stl
 from autofab.render import render_stl_to_png
@@ -49,7 +49,14 @@ TIER_FILES = {
     "T3": "t3_complex_parts.jsonl",
 }
 
-MODEL = "claude-sonnet-4-5-20250929"
+# The baseline exists to isolate what the scaffolding is worth, so it has to
+# differ from the pipeline in the scaffolding and nothing else. Taking the
+# pipeline's own coder model keeps the comparison honest; a hard-coded model
+# here would quietly measure a model change as well, and read as the
+# architecture's doing. ZEROSHOT_MODEL is for when a different model is
+# actually the question being asked.
+_MODEL_OVERRIDE = os.getenv("ZEROSHOT_MODEL", "").strip()
+MODEL = agents._model_id(_MODEL_OVERRIDE) if _MODEL_OVERRIDE else agents.CODER_MODEL
 
 SYSTEM_PROMPT = """You are a CAD engineer. Generate a complete, executable Python script using the CadQuery library to create the requested 3D part.
 
@@ -107,22 +114,25 @@ def generate_reference_stl(reference_code: str, entry_id: str, output_dir: Path)
 
 
 def zero_shot_generate(prompt: str) -> tuple[str, dict]:
-    """One raw LLM call. Returns (code, token_usage)."""
-    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-    )
+    """One raw LLM call. Returns (code, token_usage).
 
-    tokens = {
-        "input_tokens": response.usage.input_tokens,
-        "output_tokens": response.usage.output_tokens,
-        "calls": 1,
-    }
+    Routed through agents._call_claude for the transport only - the configured
+    backend and its model-id prefix, a token budget that thinking cannot eat
+    whole, the retry when a reply is cut off, and reading the text block
+    rather than content[0] (which is a thinking block on these models). None
+    of that is scaffolding: it is what makes a call arrive at all, and the
+    pipeline it is being compared against gets it too.
 
-    code = response.content[0].text.strip()
+    What stays absent is everything the comparison is about - no Planner, no
+    RAG, no refinement, no Judge, no error retries, and none of the coder's
+    output repairs. The fence-stripping below is this script\'s own, and
+    deliberately more naive than _extract_code.
+    """
+    agents.reset_token_usage()
+    text = agents._call_claude(SYSTEM_PROMPT, prompt, model=MODEL)
+    tokens = agents.get_token_usage()
+
+    code = text.strip()
     if code.startswith("```python"):
         code = code[len("```python"):].strip()
     elif code.startswith("```"):
@@ -226,7 +236,9 @@ def main():
         "dataset": "dataset_v2",
         "tiers": args.tiers,
         "mode": "zero-shot",
+        "backend": agents.LLM_BACKEND,
         "model": MODEL,
+        "max_tokens": agents.CODER_MAX_TOKENS,
         "system_prompt": SYSTEM_PROMPT,
         "pipeline": "none (raw LLM call)",
         "rag": False,
@@ -237,7 +249,7 @@ def main():
         "limit_per_tier": args.limit_per_tier,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
-    with open(config_file, "w") as f:
+    with open(config_file, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
 
     print(f"Loading benchmark entries...")
@@ -253,7 +265,7 @@ def main():
     # Resume support
     completed_ids = set()
     if results_file.exists():
-        with open(results_file) as f:
+        with open(results_file, encoding="utf-8") as f:
             for line in f:
                 try:
                     r = json.loads(line)
@@ -284,8 +296,31 @@ def main():
 
         record = run_single_entry(entry, experiment_dir)
 
-        with open(results_file, "a") as f:
+        with open(results_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record) + "\n")
+
+        # A credential that expired mid-run, or was never picked up, fails
+        # every remaining entry identically - and each one is recorded as
+        # attempted, so a resume skips them all. Stop at the first.
+        err = str(record.get("error") or "")
+        if any(m in err for m in ("401", "ExpiredToken", "ExpiredTokenException",
+                                  "InvalidClientTokenId",
+                                  "UnrecognizedClientException",
+                                  "AuthenticationError",
+                                  "Could not resolve AWS credentials",
+                                  "Unable to locate credentials",
+                                  "NoCredentialsError")):
+            print("\n" + "=" * 70)
+            print("STOPPING: the provider would not accept our credentials.")
+            print("=" * 70)
+            print(f"  {err[:200]}")
+            print("\n  Refresh them, then drop the entries this run recorded")
+            print("  before resuming, or they will be skipped as completed:")
+            print(f"    python scripts/drop_failed_entries.py "
+                  f"results/{args.experiment_name} --apply")
+            print(f"    python scripts/run_zeroshot_baseline.py "
+                  f"--experiment-name {args.experiment_name}")
+            break
 
         total_done += 1
         if record.get("execution_success"):
@@ -338,16 +373,14 @@ def main():
 
     # Token costs
     total_in, total_out = 0, 0
-    with open(results_file) as f:
+    with open(results_file, encoding="utf-8") as f:
         for line in f:
             r = json.loads(line)
             t = r.get("tokens", {})
             total_in += t.get("input_tokens", 0)
             total_out += t.get("output_tokens", 0)
-    cost_in = total_in / 1_000_000 * 3
-    cost_out = total_out / 1_000_000 * 15
     print(f"Tokens: {total_in:,} in / {total_out:,} out")
-    print(f"Est. cost: ${cost_in + cost_out:.2f}")
+    print(agents.format_cost(total_in, total_out))
 
     if cd_vals:
         import numpy as np

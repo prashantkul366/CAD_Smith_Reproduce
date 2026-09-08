@@ -141,6 +141,30 @@ def get_transport_stats() -> dict:
     return dict(_transport_stats)
 
 
+#: Per-million-token rates for the cost estimate. Unset by default and
+#: deliberately so: on Bedrock the price is AWS's, per region and per model,
+#: and it is not ours to guess. Set them from your own pricing page.
+INPUT_PER_MTOK = float(os.getenv("CADSMITH_INPUT_PER_MTOK", "0") or 0)
+OUTPUT_PER_MTOK = float(os.getenv("CADSMITH_OUTPUT_PER_MTOK", "0") or 0)
+
+
+def format_cost(input_tokens: int, output_tokens: int) -> str:
+    """One line about spend, honest about what it does and does not know.
+
+    The figure this replaced multiplied by $3/$15 per MTok - first-party rates
+    for a model this benchmark no longer runs - and printed the product as
+    "Est. cost". On Bedrock that number is wrong twice over, and it is quoted
+    in write-ups, so it is better to say nothing than to say a number nobody
+    can source.
+    """
+    if not (INPUT_PER_MTOK or OUTPUT_PER_MTOK):
+        return ("Cost: not estimated - set CADSMITH_INPUT_PER_MTOK and "
+                "CADSMITH_OUTPUT_PER_MTOK from your provider's pricing page")
+    cost = input_tokens / 1e6 * INPUT_PER_MTOK + output_tokens / 1e6 * OUTPUT_PER_MTOK
+    return (f"Est. cost: ${cost:.2f} "
+            f"(at ${INPUT_PER_MTOK:g}/${OUTPUT_PER_MTOK:g} per MTok in/out)")
+
+
 def get_token_usage() -> dict:
     """Return accumulated token usage since last reset."""
     return dict(_token_usage)

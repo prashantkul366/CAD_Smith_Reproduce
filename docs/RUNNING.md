@@ -139,6 +139,32 @@ python scripts/run_custom_benchmark.py --experiment-name smoke --ids T1_001 T2_0
 python scripts/run_custom_benchmark.py --experiment-name claude_novision --no-vision
 ```
 
+## 5. Zero-shot baseline
+
+```bash
+python scripts/run_zeroshot_baseline.py --experiment-name zeroshot --verbose
+python scripts/analyze_results.py results/zeroshot --compare results/<pipeline run>
+```
+
+One call per entry: no Planner, no RAG, no refinement, no Judge, no error
+retries, and none of the coder's output repairs. That is the whole comparison,
+so the baseline takes everything else from the same place the pipeline does -
+the backend, `CODER_MODEL`, and the token budget - and differs only in the
+scaffolding. Set `ZEROSHOT_MODEL` only when a different model is the question
+being asked; it will then be measuring two things at once, and the config it
+writes records which model ran.
+
+## 6. Cost
+
+Neither runner guesses a price. Both report tokens always, and a dollar figure
+only once you supply the rates, because on Bedrock the price is AWS's, per
+region and per model:
+
+```bash
+export CADSMITH_INPUT_PER_MTOK=3      # from your own pricing page
+export CADSMITH_OUTPUT_PER_MTOK=15
+```
+
 Results append to `results/<name>/results.jsonl`. The runner **skips entries
 already recorded there**, so an interrupted run resumes by re-invoking the same
 command. To force specific entries to re-run, pass them with `--ids`, or delete

@@ -618,7 +618,7 @@ def main():
     if agents.LLM_BACKEND == "local":
         print(f"Backend: local ({agents.LOCAL_MODEL_ID}) — no API cost")
     else:
-        print(f"Est. cost: ${total_in/1_000_000*3 + total_out/1_000_000*15:.2f}")
+        print(agents.format_cost(total_in, total_out))
 
     c = repairs["calls"]
     if c:
