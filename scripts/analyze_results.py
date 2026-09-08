@@ -147,6 +147,27 @@ def print_summary(df: pd.DataFrame, name: str):
         print(f"    IoU — median: {valid['iou'].median():.4f}, "
               f"mean: {valid['iou'].mean():.4f}")
 
+    # A mean far above the median is one or two entries, not a trend, and the
+    # aggregate rows above give no way to see that. Chamfer distance is where
+    # it shows: an entry can pass the Judge and still sit orders of magnitude
+    # off, usually a scale or units mismatch rather than a wrong shape - which
+    # is a finding about the Judge, and easy to publish straight past.
+    if len(valid) > 2 and valid["cd"].mean() > 3 * valid["cd"].median():
+        worst = valid.nlargest(min(5, len(valid)), "cd")
+        share = worst["cd"].sum() / valid["cd"].sum() * 100
+        print(f"\n  CD outliers - the mean is {valid['cd'].mean() / valid['cd'].median():.0f}x "
+              f"the median, so it describes these, not the run:")
+        print(f"  {'entry':<10} {'tier':<5} {'CD':>10} {'F1':>8} {'IoU':>8}  converged")
+        print(f"  {'-'*10} {'-'*5} {'-'*10} {'-'*8} {'-'*8}  ---------")
+        for _, r in worst.iterrows():
+            print(f"  {str(r['uid']):<10} {str(r['tier']):<5} {r['cd']:>10.2f} "
+                  f"{r['f1']:>8.4f} {r['iou']:>8.4f}  "
+                  f"{'yes' if r['success'] else 'no'}")
+        print(f"  These {len(worst)} of {len(valid)} entries carry {share:.0f}% "
+              f"of the total chamfer distance.")
+        print("  A converged entry among them means the Judge passed geometry the")
+        print("  measurement says is wrong - worth opening before quoting the mean.")
+
     # Token / cost stats
     total_in = df["input_tokens"].sum()
     total_out = df["output_tokens"].sum()
@@ -155,9 +176,14 @@ def print_summary(df: pd.DataFrame, name: str):
     if BACKEND == "local":
         print(f"  Est. cost: $0.00 (local backend: {MODEL_ID})")
     else:
-        total_cost = total_in / 1_000_000 * 3 + total_out / 1_000_000 * 15
-        per_entry_cost = total_cost / total if total > 0 else 0
-        print(f"  Est. cost: ${total_cost:.2f} total, ${per_entry_cost:.4f}/entry")
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from autofab import agents
+        line = agents.format_cost(total_in, total_out)
+        if line.startswith("Est. cost:") and total > 0:
+            cost = (total_in / 1e6 * agents.INPUT_PER_MTOK
+                    + total_out / 1e6 * agents.OUTPUT_PER_MTOK)
+            line += f", ${cost/total:.4f}/entry"
+        print(f"  {line}")
     print(f"  Avg LLM calls/entry: {df['num_llm_calls'].mean():.1f}")
     print(f"  Avg time/entry: {df['total_time_ms'].mean()/1000:.1f}s")
 
