@@ -37,11 +37,17 @@ def main() -> int:
         print("           bash:        unset AWS_PROFILE")
     print(f"  coder model : {agents.CODER_MODEL}")
     print(f"  judge model : {agents.JUDGE_MODEL}")
-    import inspect as _inspect
-    _coder_budget = (agents.CODER_MAX_TOKENS
-                     or _inspect.signature(agents._call_claude).parameters["max_tokens"].default)
-    print(f"  coder budget: {_coder_budget} tokens")
+    print(f"  coder budget: {agents.CODER_MAX_TOKENS} tokens")
     print(f"  judge budget: {agents.MAX_TOKENS} tokens")
+    for label, budget in (("CODER_MAX_TOKENS", agents.CODER_MAX_TOKENS),
+                          ("MAX_TOKENS", agents.MAX_TOKENS)):
+        if budget < agents.THINKING_FLOOR:
+            # Worth a preflight line because of how it presents mid-run: not a
+            # truncated script but a reply with nothing in it, which reads like
+            # the model refusing rather than a ceiling we chose.
+            print(f"{WARN} {label}={budget} is under the {agents.THINKING_FLOOR}-token")
+            print("         floor. Thinking is drawn from the same budget as the")
+            print("         answer, so replies can arrive empty on hard entries.")
     import ssl
     from autofab import _ssl_compat
     if _ssl_compat.CA_BUNDLE:

@@ -73,9 +73,39 @@ not grading its own homework. Defaults:
 On Bedrock the `anthropic.` prefix is added automatically — set
 `CODER_MODEL=claude-sonnet-5`, not the prefixed form.
 
-`MAX_TOKENS` defaults to 16000. Do not lower it much: these models think
-adaptively by default and thinking tokens count against the same budget, so a
-small ceiling truncates scripts mid-function.
+### Output budget
+
+| Role | Env | Default |
+|---|---|---|
+| Planner / Coder / Refiners | `CODER_MAX_TOKENS` | 16000 |
+| Vision Judge | `MAX_TOKENS` | 16000 |
+
+Do not lower either much. These models think adaptively by default, the
+thinking is drawn from the same budget as the answer, and how long they think
+grows with the difficulty of the request. Below roughly 8192 a hard T3 entry
+can spend the whole budget thinking, so the reply arrives with **no text block
+in it** and the runner records:
+
+```
+No text block in response (stop_reason=max_tokens)
+```
+
+That is a ceiling we set, not a model that could not build the part. A reply
+cut off at the budget is retried once with the budget doubled, up to
+`TRUNCATION_RETRY_CEILING` (32000), and the preflight warns about a budget
+under the floor. To check the wiring without spending anything:
+
+```bash
+python scripts/check_token_budget.py
+```
+
+If entries were already recorded with that error, drop them so a resumed run
+redoes them:
+
+```bash
+python scripts/drop_failed_entries.py results/<experiment> --apply
+python scripts/run_custom_benchmark.py --experiment-name <experiment> --tiers T1 T2 T3 --verbose
+```
 
 ## 4. Run
 

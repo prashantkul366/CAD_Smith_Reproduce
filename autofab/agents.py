@@ -58,11 +58,26 @@ def _model_id(name: str) -> str:
 CODER_MODEL = _model_id(os.getenv("CODER_MODEL", _DEFAULT_CODER))
 JUDGE_MODEL = _model_id(os.getenv("JUDGE_MODEL", _DEFAULT_JUDGE))
 
-# Output budget for the text agents (Planner / Coder / Refiners). On models with
-# adaptive thinking the thinking tokens share this budget, so a long T3 script
-# can truncate mid-function; _call_claude warns when that happens. Unset by
-# default so the per-call default in the signature applies.
-CODER_MAX_TOKENS = int(os.getenv("CODER_MAX_TOKENS", "0")) or None
+# Output budget for the text agents (Planner / Coder / Refiners). Thinking
+# tokens are drawn from this same budget, and these models think adaptively:
+# the harder the request, the longer they think before writing anything. The
+# old default of 4096 was spent entirely on thinking for the hardest entries,
+# so the reply arrived with no text block at all and the entry was scored a
+# failure - a ceiling we set, not a model that could not do the work. Eight
+# entries of one 100-entry run were lost that way, seven of them T3.
+CODER_MAX_TOKENS = int(os.getenv("CODER_MAX_TOKENS", "16000"))
+
+#: Below this a whole reply can be thinking with nothing left over to say. A
+#: budget under it is accepted (someone may be capping cost deliberately) but
+#: said out loud, because the failure it produces looks like a model failure.
+THINKING_FLOOR = 8192
+
+#: One retry, at double the budget, when a reply is cut off - see _call_claude.
+TRUNCATION_RETRY_CEILING = int(os.getenv("TRUNCATION_RETRY_CEILING", "32000"))
+
+#: The local backend budget. Left where it was: that model does not think
+#: adaptively, and the published Qwen3-VL baseline was measured at this value.
+LOCAL_MAX_TOKENS = 4096
 
 # The Judge reasons over a rendered image and returns JSON feedback, so it needs
 # considerably more room than the coder.
@@ -110,7 +125,8 @@ _token_usage = {"input_tokens": 0, "output_tokens": 0, "calls": 0}
 
 # Tunnel-level events, tracked so infrastructure losses are never reported as
 # model failures. Cumulative for the whole run (not reset per entry).
-_transport_stats = {"gateway_timeouts": 0, "budget_reductions": 0, "hard_failures": 0}
+_transport_stats = {"gateway_timeouts": 0, "budget_reductions": 0,
+                    "budget_raises": 0, "hard_failures": 0}
 
 
 def get_transport_stats() -> dict:
@@ -127,6 +143,9 @@ def reset_token_usage():
     _token_usage["input_tokens"] = 0
     _token_usage["output_tokens"] = 0
     _token_usage["calls"] = 0
+    # The runner writes this dict into each entry's record, so a counter left
+    # standing reports the whole run's truncations against one entry.
+    _token_usage.pop("truncated", None)
 
 
 # def _get_client() -> anthropic.Anthropic:
@@ -188,9 +207,10 @@ def _response_text(response) -> str:
         f"No text block in response (stop_reason={getattr(response, 'stop_reason', None)})")
 
 
-def _call_local_llm(system: str, content, max_tokens: int = 4096,
+def _call_local_llm(system: str, content, max_tokens: int = None,
                      temperature: float = 0.0, retries: int = 3) -> tuple[str, dict]:
     """Call the local OpenAI-compatible shim (e.g. Qwen3-VL-8B-Instruct on Colab)."""
+    max_tokens = max_tokens or LOCAL_MAX_TOKENS
     payload = {
         "model": LOCAL_MODEL_ID,
         "messages": [
@@ -274,36 +294,87 @@ def _anthropic_blocks_to_openai(blocks: list) -> list:
     return out
 
 
-def _call_claude(system: str, user: str, model: str = None, max_tokens: int = 4096) -> str:
+_low_budget_warned = set()
+
+
+def _warn_low_budget(budget: int) -> None:
+    """Say once, per budget, that a ceiling is small enough to be spent thinking.
+
+    Worth saying because of how the failure presents: not a slow run or a
+    truncated script, but a reply with nothing in it, which reads at the top
+    of a traceback like the model refusing to answer.
+    """
+    if budget >= THINKING_FLOOR or budget in _low_budget_warned:
+        return
+    _low_budget_warned.add(budget)
+    print(f"  WARN: max_tokens={budget} is below the {THINKING_FLOOR}-token floor "
+          f"these models need with thinking on; replies may arrive empty.")
+
+
+def _create_tracked(client, *, max_tokens: int, **kwargs):
+    """One model call, usage tracked, retried once if the reply was cut off.
+
+    How long these models think is not something a fixed ceiling can predict:
+    it grows with the difficulty of the request, and the thinking comes out of
+    the same budget as the answer. So any ceiling can be consumed whole by a
+    hard enough entry, and what comes back then is a reply with no text in it
+    at all. One retry at double the budget costs a fraction of the
+    alternative, which is that the entry is scored a failure and the whole
+    generate/execute/judge loop behind it is thrown away.
+
+    Returns the response. The caller decides what to do with a reply that is
+    still truncated - a partly-written script is sometimes salvageable, a
+    reply that was thinking all the way down never is.
+    """
+    _warn_low_budget(max_tokens)
+    budget, retried = max_tokens, False
+    while True:
+        response = client.messages.create(max_tokens=budget, **kwargs)
+        if hasattr(response, "usage") and response.usage:
+            _token_usage["input_tokens"] += response.usage.input_tokens
+            _token_usage["output_tokens"] += response.usage.output_tokens
+        _token_usage["calls"] += 1
+        if getattr(response, "stop_reason", None) != "max_tokens":
+            return response
+
+        _token_usage["truncated"] = _token_usage.get("truncated", 0) + 1
+        raised = min(max(budget * 2, THINKING_FLOOR), TRUNCATION_RETRY_CEILING)
+        if retried or raised <= budget:
+            print(f"  WARN: reply truncated at max_tokens={budget} and not retried "
+                  f"again. Raise CODER_MAX_TOKENS (or TRUNCATION_RETRY_CEILING).")
+            return response
+        print(f"  WARN: reply truncated at max_tokens={budget} - thinking is drawn "
+              f"from the same budget as the answer; retrying at {raised}")
+        _transport_stats["budget_raises"] += 1
+        budget, retried = raised, True
+
+
+def _call_claude(system: str, user: str, model: str = None, max_tokens: int = None) -> str:
     """Call the configured LLM backend and return the text response.
 
     model=None selects CODER_MODEL, which carries the `anthropic.` prefix that
     Bedrock requires. Passing a bare literal here would bypass that.
-    max_tokens is the per-call default; CODER_MAX_TOKENS overrides it globally.
+    max_tokens=None takes the budget from CODER_MAX_TOKENS; an explicit value
+    wins, so a caller that knows its answer is short can still cap it.
+
+    A reply cut off at the budget is retried once with more room; see
+    _create_tracked.
     """
     if LLM_BACKEND == "local":
-        text, usage = _call_local_llm(system, user, max_tokens=max_tokens)
+        text, usage = _call_local_llm(system, user,
+                                      max_tokens=max_tokens or LOCAL_MAX_TOKENS)
         _token_usage["input_tokens"] += usage.get("input_tokens", 0)
         _token_usage["output_tokens"] += usage.get("output_tokens", 0)
         _token_usage["calls"] += 1
         return text.strip()
 
-    client = _get_client()
-    budget = CODER_MAX_TOKENS or max_tokens
-    response = client.messages.create(
+    response = _create_tracked(
+        _get_client(),
+        max_tokens=max_tokens or CODER_MAX_TOKENS,
         model=model or CODER_MODEL,
-        max_tokens=budget,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
-    if hasattr(response, "usage") and response.usage:
-        _token_usage["input_tokens"] += response.usage.input_tokens
-        _token_usage["output_tokens"] += response.usage.output_tokens
-    _token_usage["calls"] += 1
-    if getattr(response, "stop_reason", None) == "max_tokens":
-        _token_usage["truncated"] = _token_usage.get("truncated", 0) + 1
-        print(f"  WARN: output truncated at max_tokens={budget}. The script is "
-              f"incomplete; raise CODER_MAX_TOKENS if this recurs.")
     return _response_text(response)
 
 
@@ -809,17 +880,13 @@ def evaluate_geometry(
                 "judge_unavailable": True,
             }
 
-    client = _get_client()
-    response = client.messages.create(
-        model=JUDGE_MODEL,
+    response = _create_tracked(
+        _get_client(),
         max_tokens=MAX_TOKENS,
+        model=JUDGE_MODEL,
         system=VALIDATOR_SYSTEM,
         messages=[{"role": "user", "content": message_content}],
     )
-    if hasattr(response, "usage") and response.usage:
-        _token_usage["input_tokens"] += response.usage.input_tokens
-        _token_usage["output_tokens"] += response.usage.output_tokens
-    _token_usage["calls"] += 1
     return _extract_json(_response_text(response))
 
 

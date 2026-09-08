@@ -1,8 +1,9 @@
 """Remove entries that failed for reasons outside the model's control.
 
 The runner records every entry it attempts, including ones that failed because
-credentials expired or the network dropped. Resume then skips them, so those
-entries stay missing from the results and silently depress the tier totals.
+credentials expired, the network dropped, or we gave the model a token ceiling
+too small to answer in. Resume then skips them, so those entries stay missing
+from the results and silently depress the tier totals.
 
 This drops such records - and only such records - so the next run redoes them.
 Genuine model or geometry failures are kept: they are results.
@@ -36,12 +37,36 @@ INFRA_MARKERS = (
     "503",
 )
 
+#: Substrings that mark a failure as ours rather than the model's: the reply
+#: was cut off at a ceiling we chose. Thinking tokens come out of the same
+#: budget as the answer, so a budget small enough leaves a reply with no text
+#: in it at all - which is a statement about our configuration, not about
+#: whether the model could build the part. autofab/agents.py now defaults to
+#: 16000 and retries once above that, so a rerun of these should stick.
+HARNESS_MARKERS = (
+    "No text block in response",
+    "stop_reason=max_tokens",
+)
 
-def is_infrastructure(record: dict) -> bool:
+
+def _matches(record: dict, markers: tuple) -> bool:
     error = str(record.get("error") or "")
     if not error:
         return False
-    return any(marker.lower() in error.lower() for marker in INFRA_MARKERS)
+    return any(marker.lower() in error.lower() for marker in markers)
+
+
+def is_infrastructure(record: dict) -> bool:
+    return _matches(record, INFRA_MARKERS)
+
+
+def is_harness(record: dict) -> bool:
+    return _matches(record, HARNESS_MARKERS)
+
+
+def is_droppable(record: dict) -> bool:
+    """Did this entry fail for a reason that says nothing about the model?"""
+    return is_infrastructure(record) or is_harness(record)
 
 
 def main() -> int:
@@ -61,12 +86,14 @@ def main() -> int:
         if line.strip():
             rows.append(json.loads(line))
 
-    drop = [r for r in rows if is_infrastructure(r)]
-    keep = [r for r in rows if not is_infrastructure(r)]
+    drop = [r for r in rows if is_droppable(r)]
+    keep = [r for r in rows if not is_droppable(r)]
 
     print(f"{path}")
     print(f"  entries recorded          : {len(rows)}")
-    print(f"  infrastructure failures   : {len(drop)}")
+    print(f"  infrastructure failures   : {sum(1 for r in drop if is_infrastructure(r))}")
+    print(f"  truncated-reply failures  : {sum(1 for r in drop if is_harness(r)):<3}"
+          f"  (a token ceiling we set, not a model result)")
     print(f"  kept (results, incl. real failures): {len(keep)}")
 
     if drop:
