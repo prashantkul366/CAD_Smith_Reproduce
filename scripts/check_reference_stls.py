@@ -9,12 +9,19 @@ model failure and drags the tier mean with it. T1_031 was stored as a
 Rebuilds each reference from `reference_code` and compares the bounding box to
 the stored STL. Needs no credentials and no network.
 
-    python scripts/check_reference_stls.py            # all tiers
-    python scripts/check_reference_stls.py --tiers T1
+Nothing else in the repo rebuilds these files - generate_reference_stls.py
+works on data_test.jsonl, a different dataset - so --fix rewrites a mismatched
+reference from its own code. It only ever touches a file that is provably
+wrong, and it invalidates any recorded result for that entry: the metrics in
+results.jsonl were measured against the old solid and have to be recomputed.
+
+    python scripts/check_reference_stls.py            # report
+    python scripts/check_reference_stls.py --fix      # rewrite the mismatches
 """
 
 import argparse
 import json
+import shutil
 import struct
 import sys
 import tempfile
@@ -54,19 +61,22 @@ def stl_bbox(path: Path):
     return [hi[i] - lo[i] for i in range(3)]
 
 
-def built_bbox(code: str, executor):
-    result = executor.execute(code, name="ref_check")
+def build(code: str, executor, name: str):
+    """Build a reference and return (bbox, stl path, error)."""
+    result = executor.execute(code, name=name)
     if not result.success:
-        return None, (result.error or "")[:90]
+        return None, None, (result.error or "")[:90]
     bb = (result.geometry_json or {}).get("bounding_box") or {}
     if not bb:
-        return None, "no bounding box reported"
-    return [bb["xlen"], bb["ylen"], bb["zlen"]], None
+        return None, None, "no bounding box reported"
+    return [bb["xlen"], bb["ylen"], bb["zlen"]], result.stl_path, None
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tiers", nargs="+", default=["T1", "T2", "T3"])
+    ap.add_argument("--fix", action="store_true",
+                    help="rewrite mismatched references from their own code")
     args = ap.parse_args()
 
     from autofab.executor import Executor
@@ -90,7 +100,7 @@ def main() -> int:
                 continue
 
             code = entry.get("reference_code") or entry.get("code")
-            want, err = built_bbox(code, executor)
+            want, built_stl, err = build(code, executor, eid)
             checked += 1
             if want is None:
                 print(f"  UNBUILT  {eid}: reference code fails - {err}")
@@ -105,16 +115,27 @@ def main() -> int:
                       f"{want[0]:.2f} x {want[1]:.2f} x {want[2]:.2f}")
                 mismatched += 1
                 bad.append(eid)
+                if args.fix and built_stl:
+                    backup = stl.with_suffix(".stl.bak")
+                    if not backup.exists():
+                        shutil.copy(stl, backup)
+                    shutil.copy(built_stl, stl)
+                    print(f"           rewritten from reference_code "
+                          f"(old file kept at {backup.name})")
 
     print()
     print(f"  checked            : {checked}")
     print(f"  bbox mismatches    : {mismatched}")
     print(f"  reference unbuilt  : {unbuildable}")
     print(f"  missing STLs       : {missing}")
-    if bad:
+    if bad and not args.fix:
         print(f"\n  Every metric for these entries is measured against the wrong")
         print(f"  solid: {', '.join(bad)}")
-        print(f"  Regenerate with: python scripts/generate_reference_stls.py")
+        print(f"  Rewrite them from their own code with --fix.")
+    elif bad:
+        print(f"\n  Rewrote {len(bad)}: {', '.join(bad)}")
+        print(f"  Any recorded result for these was scored against the old")
+        print(f"  solid. Delete those lines from results.jsonl and re-run them.")
     return 1 if (mismatched or unbuildable or missing) else 0
 
 
