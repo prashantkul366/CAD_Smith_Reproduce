@@ -243,6 +243,10 @@ def main():
         "backend": agents.LLM_BACKEND,
         "model": MODEL,
         "max_tokens": agents.CODER_MAX_TOKENS,
+        # The paper runs the Executor with a 60s timeout; this repo
+        # defaults to 300. Recorded so a results directory says which
+        # it used rather than leaving it to be guessed later.
+        "exec_timeout_s": Executor.DEFAULT_TIMEOUT,
         "system_prompt": SYSTEM_PROMPT,
         "pipeline": "none (raw LLM call)",
         "rag": False,

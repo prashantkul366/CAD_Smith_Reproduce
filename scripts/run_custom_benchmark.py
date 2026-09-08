@@ -434,6 +434,10 @@ def main():
         "pipeline": "full" if args.mode == "refinement" else "single-shot",
         "rag_config": "kb1+kb2",
         "vision": not args.no_vision,
+        # The paper runs the Executor with a 60s timeout; this repo
+        # defaults to 300. Recorded so a results directory says which
+        # it used rather than leaving it to be guessed later.
+        "exec_timeout_s": Executor.DEFAULT_TIMEOUT,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     with open(config_file, "w") as f:
